@@ -1,11 +1,9 @@
 {
   "name": "railyard",
-  "version": "1.1.0",
-  "description": "Guided creation and management of Railyard platform entities (agents, governors, tools, workflows, credentials, knowledge graph, memories, chat sessions, knowledge bases, integrations, inbound sources, LLM models) via REST API with iterative build-test-fix verification.",
-  "author": {
-    "name": "railyard-team"
-  },
-  "repository": "https://github.com/se-jo-ma/railyard-plugins",
+  "version": "1.2.0",
+  "description": "Guided ops for the Railyard platform — agents, governors, tools, workflows, credentials, knowledge graph, memories, chat, integrations, inbound sources, LLM models, ML stack (model-definitions, trained-models, training-runs, datasets, ONNX), pipelines, skills, chatbots, budgets/costs, alerts/notifications, compliance, dashboards, webhooks. REST API with iterative build-test-fix verification.",
+  "author": {"name": "kraken-networks"},
+  "repository": "https://github.com/KrakenNet/railyard-plugins",
   "license": "MIT",
-  "keywords": ["railyard", "agents", "governors", "tools", "workflows", "credentials", "knowledge-graph", "clips", "api", "operations", "chat", "integrations", "inbound-sources", "llm-models", "portability"]
+  "keywords": ["railyard","agents","governors","tools","workflows","credentials","knowledge-graph","clips","api","operations","chat","integrations","inbound-sources","llm-models","ml","pipelines","skills","chatbots","budgets","alerts","compliance","dashboards","webhooks","portability"]
 }
