@@ -1,6 +1,6 @@
 ---
 description: Create and manage knowledge bases with tags, ACLs, and hierarchical organization for scoped RAG
-argument-hint: [create|list|tag|acl] [--visibility private|shared]
+argument-hint: [create|list|tag|acl|tags|node-tags] [--visibility private|shared]
 allowed-tools: [Bash, Read, AskUserQuestion, Task]
 ---
 
@@ -19,8 +19,15 @@ Ensure valid JWT token. If not: "Run /railyard:auth first."
 ## Parse Arguments
 
 From `$ARGUMENTS`:
-- **Action**: `create` (default), `list`, `tag`, `acl`
+- **Action**: `create` (default), `list`, `tag`, `acl`, `tags`, `node-tags`
 - **--visibility**: Pre-select visibility level
+
+## Endpoint Map (sub-resources)
+
+| Resource | Endpoint | Operations |
+|----------|----------|------------|
+| tags | `/api/v1/kb-tags` | list, create, update, delete |
+| node-tags | `/api/v1/node-tags` | list, create, delete |
 
 ## Route by Action
 
@@ -84,6 +91,62 @@ Interview:
 1. **"Create a new tag or list existing?"**
    - list: `GET /api/v1/kb-tags`
    - create: ask for name, description, color
+
+### Tags (kb-tags CRUD)
+
+Full CRUD on `/api/v1/kb-tags`.
+
+Interview for create:
+- **name** (required)
+- **color** (hex, e.g. `#3366ff`)
+- **scope** (`global` | `kb` | `node`)
+
+```bash
+# List
+curl -s "${RAILYARD_URL}/api/v1/kb-tags?limit=50" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+# Create
+curl -s -X POST "${RAILYARD_URL}/api/v1/kb-tags" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"...","color":"#3366ff","scope":"kb"}'
+
+# Update
+curl -s -X PUT "${RAILYARD_URL}/api/v1/kb-tags/${TAG_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"...","color":"#...","scope":"..."}'
+
+# Delete
+curl -s -X DELETE "${RAILYARD_URL}/api/v1/kb-tags/${TAG_ID}" \
+  -H "Authorization: Bearer ${TOKEN}"
+```
+
+### Node-Tags
+
+List, create, delete on `/api/v1/node-tags` (no update — recreate to change).
+
+Interview for create:
+- **node_id** (required — KB node UUID)
+- **tag_id** (required — kb-tag UUID)
+- **applied_by** (`user` | `automation`)
+
+```bash
+# List
+curl -s "${RAILYARD_URL}/api/v1/node-tags?node_id=${NODE_ID}" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+# Create
+curl -s -X POST "${RAILYARD_URL}/api/v1/node-tags" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"node_id":"...","tag_id":"...","applied_by":"user"}'
+
+# Delete
+curl -s -X DELETE "${RAILYARD_URL}/api/v1/node-tags/${NODE_TAG_ID}" \
+  -H "Authorization: Bearer ${TOKEN}"
+```
 
 ### ACL
 
