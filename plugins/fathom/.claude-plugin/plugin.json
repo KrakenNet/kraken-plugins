@@ -1,0 +1,9 @@
+{
+  "name": "fathom",
+  "version": "0.1.0",
+  "description": "Author and operate Fathom CLIPS rule packs — scaffold packs, templates, and rules; validate/test/bench locally; evaluate, hot-reload, and verify artifacts against a running engine.",
+  "author": {"name": "kraken-networks"},
+  "repository": "https://github.com/KrakenNet/fathom",
+  "license": "MIT",
+  "keywords": ["fathom","clips","rules","rule-packs","attestation","authoring","operations"]
+}
