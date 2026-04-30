@@ -16,6 +16,7 @@ A Claude Code plugin for managing the Railyard Knowledge Base lifecycle and enfo
 | `/kb:stale [domain]` | Find articles whose source code has changed |
 | `/kb:gaps [path]` | List and manage gap files |
 | `/kb:plan [--source] [--issues]` | Turn analysis into prioritized tasks or GitHub issues |
+| `/kb:cross-project [project]` | Bootstrap a KB in a Kraken sibling project (fathom, nautilus, harbor) |
 
 ## Skills
 
@@ -33,6 +34,6 @@ A Claude Code plugin for managing the Railyard Knowledge Base lifecycle and enfo
 ## Installation
 
 ```bash
-claude plugins marketplace add se-jo-ma/railyard-kb-plugin
+claude plugins marketplace add ./kraken-plugins
 claude plugins install kb
 ```
