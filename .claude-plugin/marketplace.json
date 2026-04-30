@@ -1,0 +1,22 @@
+{
+  "name": "railyard",
+  "owner": {
+    "name": "railyard-team"
+  },
+  "metadata": {
+    "description": "Guided creation and management of Railyard platform entities via REST API"
+  },
+  "plugins": [
+    {
+      "name": "railyard",
+      "description": "Guided creation and management of Railyard platform entities (agents, governors, tools, workflows, credentials, knowledge graph, memories, chat sessions, knowledge bases, integrations, inbound sources, LLM models) via REST API with iterative build-test-fix verification.",
+      "version": "1.1.0",
+      "author": {
+        "name": "railyard-team"
+      },
+      "source": "./plugins/railyard",
+      "category": "development",
+      "tags": ["railyard", "agents", "governors", "tools", "workflows", "credentials", "knowledge-graph", "clips", "api", "chat", "integrations", "inbound-sources", "llm-models", "portability"]
+    }
+  ]
+}

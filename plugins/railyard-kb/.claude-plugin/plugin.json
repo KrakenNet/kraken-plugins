@@ -1,0 +1,10 @@
+{
+  "name": "kb",
+  "version": "0.2.0",
+  "description": "Knowledge Base lifecycle management and enforcement for the Railyard project. Create, update, audit, lint, and manage KB articles with automatic staleness detection and KB-first development enforcement.",
+  "author": {
+    "name": "railyard-team"
+  },
+  "license": "MIT",
+  "keywords": ["knowledge-base", "documentation", "enforcement", "audit", "lint", "railyard"]
+}

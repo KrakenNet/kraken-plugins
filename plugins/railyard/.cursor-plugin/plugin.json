@@ -1,0 +1,10 @@
+{
+  "name": "railyard",
+  "version": "1.1.0",
+  "description": "Guided creation and management of Railyard platform entities (agents, governors, tools, workflows, credentials, knowledge graph, memories, chat sessions, knowledge bases, integrations, inbound sources, LLM models) via REST API with iterative build-test-fix verification.",
+  "author": {
+    "name": "railyard-team"
+  },
+  "license": "MIT",
+  "keywords": ["railyard", "agents", "governors", "tools", "workflows", "credentials", "knowledge-graph", "clips", "api", "operations", "chat", "integrations", "inbound-sources", "llm-models", "portability"]
+}
