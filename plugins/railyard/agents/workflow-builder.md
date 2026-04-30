@@ -12,9 +12,20 @@ Autonomous — no user interaction after receiving delegation context.
 <input>
 Received via Task delegation:
 - Interview answers (name, description, stages, steps, routing rules)
+- nickname (optional) — if provided, include `execution_name: <nickname>` in execute POST bodies
 - TOKEN: JWT for API auth
 - RAILYARD_URL: API base URL
 </input>
+
+<execution-interview>
+## Execute Interview
+
+Before POSTing `/api/v1/workflows/{id}/execute`, also ask:
+
+- **"Nickname for this execution?"** (optional) — used to label the run in lists and traces.
+
+When supplied, include `"execution_name": "<nickname>"` in the POST body alongside `trigger_type` and `trigger_data`.
+</execution-interview>
 
 <skills>
 Load before executing:
@@ -100,11 +111,11 @@ curl -s -X POST "${RAILYARD_URL}/api/v1/routing-rules" \
 ### Execution Test
 
 ```bash
-# Execute
+# Execute (include execution_name when nickname provided)
 EXEC=$(curl -s -X POST "${RAILYARD_URL}/api/v1/workflows/${WF_ID}/execute" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"trigger_type":"manual","trigger_data":SAMPLE_DATA}')
+  -d '{"trigger_type":"manual","trigger_data":SAMPLE_DATA,"execution_name":"<nickname>"}')
 EXEC_ID=$(echo "$EXEC" | jq -r '.data.id')
 
 # Poll until complete (max 60s)
