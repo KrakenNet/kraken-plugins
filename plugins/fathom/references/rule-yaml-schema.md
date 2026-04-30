@@ -27,139 +27,207 @@ templates:
   - name: agent
     description: An autonomous agent in the system.
     slots:
-      id:        { type: string, required: true }
-      role:      { type: enum, values: [admin, user, guest], required: true }
-      clearance: { type: enum, values: [unclassified, confidential, secret, top_secret] }
-      attempts:  { type: int, default: 0 }
+      id:
+        type: STRING
+        required: true
+      role:
+        type: SYMBOL
+        allowed: [admin, user, guest]
+        required: true
+      clearance:
+        type: SYMBOL
+        allowed: [unclassified, confidential, secret, top_secret]
+      attempts:
+        type: INTEGER
+        default: 0
 ```
 
-Slot-spec keys:
+Slot-spec keys (see fathom's `reference/yaml/template.md` for the canonical list):
 
-| Key           | Type                       | Default | Notes                                                     |
-|---------------|----------------------------|---------|-----------------------------------------------------------|
-| `type`        | `string\|int\|float\|bool\|enum\|datetime` | —    | Required. `enum` is a closed set of allowed symbols.      |
-| `required`    | `bool`                     | `false` | If true, asserts via the SDK/REST path that omit the slot fail validation. Rule-RHS asserts bypass this check. |
-| `values`      | `list[str]`                | —       | Required for `enum`. Ignored for numeric types.           |
-| `default`     | scalar                     | `null`  | Emitted as `(default <value>)` in the generated CLIPS.    |
-| `description` | `str`                      | `""`    | Author-facing prose; not emitted to CLIPS.                |
+| Key           | Type                                       | Default | Notes                                                                              |
+|---------------|--------------------------------------------|---------|------------------------------------------------------------------------------------|
+| `type`        | `STRING\|SYMBOL\|INTEGER\|FLOAT\|BOOLEAN`  | —       | Required. `SYMBOL` with `allowed:` is the closed-set form (replaces "enum").       |
+| `required`    | `bool`                                     | `false` | SDK/REST asserts that omit a required slot fail validation. RHS asserts bypass.    |
+| `allowed`     | `list[str]`                                | —       | Closed value set for `SYMBOL` slots.                                               |
+| `default`     | scalar                                     | `null`  | Emitted as `(default <value>)` in the generated CLIPS.                             |
+| `description` | `str`                                      | `""`    | Author-facing prose; not emitted to CLIPS.                                         |
 
 ## `rules[*]`
 
-Pairs LHS conditions (`when`) with RHS actions (`then`).
+Pairs LHS fact patterns (`when`) with an RHS `ThenBlock` (`then`).
 
 ```yaml
 rules:
   - name: deny-overclearance
-    module: access-control       # optional; defaults to MAIN
     salience: -10                # optional; default 0. Higher fires first.
     when:
-      - { template: agent, slot: clearance, op: below, value: data.classification }
+      - template: agent
+        alias: a
+        conditions:
+          - slot: clearance
+            expression: below(secret)
+      - template: data_request
+        conditions:
+          - slot: classification
+            expression: equals(secret)
     then:
-      - { decision: deny, reason: "agent clearance below data classification" }
+      action: deny
+      reason: "agent clearance below requested classification"
 ```
 
 Top-level rule fields:
 
-| Field      | Type           | Default | Description                                                               |
-|------------|----------------|---------|---------------------------------------------------------------------------|
-| `name`     | str            | —       | Required. Unique within the module.                                       |
-| `module`   | str            | `MAIN`  | The module namespace this rule belongs to.                                |
-| `salience` | int            | `0`     | Conflict-resolution priority. Higher fires first; ties broken below.      |
-| `when`     | list           | —       | One or more conditions. Empty list rejected by `compile_rule`.            |
-| `then`     | list           | —       | One or more actions.                                                      |
+| Field         | Type                | Default | Description                                                                          |
+|---------------|---------------------|---------|--------------------------------------------------------------------------------------|
+| `name`        | str                 | —       | Required. CLIPS identifier; emitted as `<module>::<name>`.                           |
+| `description` | str                 | `""`    | Author-facing prose; not emitted to CLIPS.                                           |
+| `salience`    | int                 | `0`     | Conflict-resolution priority. `(declare (salience N))` emitted only when `!= 0`.     |
+| `when`        | `list[FactPattern]` | —       | One or more fact patterns. Empty list is rejected by `compile_rule`.                 |
+| `then`        | `ThenBlock`         | —       | Single dict with `action` and/or `assert: [...]`. See [Action shape](#action-shape). |
 
-## Condition shapes
+Module membership is established by the enclosing `modules[*].rules:` list,
+not a per-rule `module:` field.
 
-Four condition shapes are recognised on the LHS:
+## Fact pattern (`when[*]`) — `FactPattern`
 
-### 1. Slot constraint — `{ template, slot, op, value }`
+Each entry in `when` is a `FactPattern`: a template name, optional alias, and a
+list of `ConditionEntry` items.
 
-```yaml
-when:
-  - { template: request, slot: amount, op: gt, value: 1000 }
-  - { template: request, slot: currency, op: in, value: [USD, EUR] }
-```
-
-Constrains a slot of the matched template to satisfy the operator. `value` may be
-a literal scalar/list, or a cross-fact reference (e.g. `data.classification`)
-resolved at compile time.
-
-### 2. Bound-fact reference — `{ template, bind, slots: { ... } }`
+| Field        | Type                   | Default | Description                                                                                                |
+|--------------|------------------------|---------|------------------------------------------------------------------------------------------------------------|
+| `template`   | str                    | —       | Required. The template name this pattern matches.                                                          |
+| `alias`      | str \| null            | `null`  | Optional. Used as the cross-fact prefix in peer patterns' expressions: `$<alias>.<slot>`.                  |
+| `conditions` | `list[ConditionEntry]` | —       | Required. Slot constraints and/or `(test …)` CEs. May be empty (emits a bare `(<template>)` pattern).      |
 
 ```yaml
 when:
-  - { template: agent, bind: ?a, slots: { role: admin } }
-  - { template: action, bind: ?act, slots: { actor: $a.id } }
+  - template: agent
+    alias: a
+    conditions:
+      - slot: role
+        expression: equals(admin)
+      - slot: id
+        bind: ?aid
+  - template: action
+    conditions:
+      - slot: actor
+        expression: equals($a.id)
+      - test: (policy-allows ?aid)
 ```
 
-Binds the matched fact to a variable for cross-condition reference. Bind names
-start with `?`. Use `$<bind>.<slot>` in peer conditions to refer to slots of the
-bound fact.
+## Condition entry — `ConditionEntry`
 
-### 3. Negation — `{ not: { ... } }`
+A `ConditionEntry` has four shapes (validator: `_require_bind_or_expression`):
+
+### 1. `slot` + `expression` — slot constraint
 
 ```yaml
-when:
-  - { not: { template: revocation, slot: subject, op: eq, value: $a.id } }
+- slot: amount
+  expression: greater_than(1000)
+- slot: currency
+  expression: in([USD, EUR])
 ```
 
-Matches when no fact satisfies the inner condition.
+Operators use functional-call syntax: `<op>(<arg>)`. `arg` may be a literal,
+list, or a cross-fact reference `$alias.field` (resolved to `?alias-field` at
+compile time). See [Supported operators](#supported-operators).
 
-### 4. Existential — `{ exists: { ... } }`
+### 2. `slot` + `bind` — capture without constraint
 
 ```yaml
-when:
-  - { exists: { template: alert, slot: severity, op: gte, value: high } }
+- slot: subject_id
+  bind: ?sid
 ```
 
-Matches if at least one fact satisfies the inner condition; the bound fact is
-not exposed to the RHS.
+`bind` must start with `?`. Captures the slot value for use in peer conditions
+(via `$alias.slot` cross-refs) or on the RHS.
 
-A bare list of conditions is implicit AND. Use `or:` (a list) for disjunction.
+### 3. Standalone `test` — escape hatch CE
 
-## Action shapes
+```yaml
+- test: (my-fn ?sid)
+```
 
-Four action shapes on the RHS:
+`test` must be a parenthesized CLIPS expression. Emits `(test <expr>)` after
+all pattern CEs. Used to call functions registered via
+`Engine.register_function` and the temporal externals (`fathom-count-exceeds`,
+etc.).
 
-### 1. Decision — `{ decision, reason }`
+### 4. Combinations
+
+`bind` + `expression` constrains and captures the same slot. A `test` may
+accompany a slot/expression or stand alone.
+
+```yaml
+- slot: amount
+  bind: ?amt
+  expression: greater_than(100)
+  test: (policy-allows ?amt)
+```
+
+What the validator rejects: empty entry; `slot` without `expression` or
+`bind`; `slot` alongside a standalone `test` only; `bind` not starting with
+`?`; `test` empty or unparenthesized.
+
+## Supported operators
+
+Syntax: `expression: <op>(<arg>)`. Source: `_compile_condition` in
+`fathom/compiler.py`.
+
+| Group          | Operators                                                                                          |
+|----------------|----------------------------------------------------------------------------------------------------|
+| Comparison     | `equals`, `not_equals`, `greater_than`, `less_than`                                                |
+| Set            | `in`, `not_in`                                                                                     |
+| String         | `contains`, `matches`                                                                              |
+| Classification | `below`, `meets_or_exceeds`, `within_scope`                                                        |
+| Temporal       | `changed_within`, `count_exceeds`, `rate_exceeds`, `last_n`, `distinct_count`, `sequence_detected` |
+
+Classification operators require a function declared with a `hierarchy_ref`.
+Any other operator name raises `CompilationError`.
+
+## Action shape — `ThenBlock`
+
+`then` is a single dict (not a list).
 
 ```yaml
 then:
-  - { decision: deny, reason: "insufficient clearance for {data.classification}" }
+  action: deny
+  reason: "insufficient clearance for {classification}"
+  notify: [compliance, ops]
+  attestation: true
+  assert:
+    - template: audit-log
+      slots:
+        subject: "?aid"
+        action: deny
 ```
 
-Emits a `__fathom_decision` fact that the engine reads at end-of-evaluation.
-`{placeholder}` references in `reason` interpolate LHS bind values via CLIPS
-`(str-cat …)`. `decision` is an `ActionType`: `allow|deny|escalate|scope|route`.
+| Field         | Type                  | Default            | Description                                                                                              |
+|---------------|-----------------------|--------------------|----------------------------------------------------------------------------------------------------------|
+| `action`      | `ActionType \| null`  | `null`             | One of `allow`, `deny`, `escalate`, `scope`, `route`. Emitted on the `__fathom_decision` fact.           |
+| `reason`      | str                   | `""`               | `{placeholder}` refs compile to `(str-cat …)`; literal reasons emit as quoted strings.                   |
+| `log`         | `none\|summary\|full` | `summary`          | Emitted as the `log-level` slot on the decision fact.                                                    |
+| `notify`      | `list[str]`           | `[]`               | Joined with `", "` and emitted as a single quoted string.                                                |
+| `attestation` | bool                  | `false`            | Emitted as `TRUE`/`FALSE` on the decision fact's `attestation` slot.                                     |
+| `metadata`    | `dict[str, str]`      | `{}`               | JSON-serialized (sorted keys); empty dict emits `""`.                                                    |
+| `assert`      | `list[AssertSpec]`    | `[]`               | Each entry becomes one `(assert (<template> …))` on the RHS.                                             |
 
-### 2. Assert a new fact — `{ assert: <template>, slots: { ... } }`
+`_require_action_or_asserts` enforces that at least one of `action` or a
+non-empty `assert` list is provided. Rules may assert-only, decide-only, or
+both.
+
+### `AssertSpec`
 
 ```yaml
-then:
-  - { assert: audit-log, slots: { subject: $a.id, action: deny } }
+- template: audit-log
+  slots:
+    subject: "?aid"
+    action: deny
 ```
 
-Inserts a fact into working memory. The new fact may match other rules in the
-same evaluation cycle.
-
-### 3. Retract — `{ retract: <bind-var> }`
-
-```yaml
-then:
-  - { retract: ?a }
-```
-
-Removes the bound fact from working memory.
-
-### 4. Bind — `{ bind: <var>, value: <expr> }`
-
-```yaml
-then:
-  - { bind: ?score, value: "(* $a.attempts 10)" }
-```
-
-Computes a value once for use in subsequent same-`then` actions or as an
-interpolated reason placeholder.
+`template` must be a valid CLIPS identifier. `slots` values pass through
+`_validate_slot_value`: `?var` refs must be well-formed, s-expressions must
+have balanced parens, embedded NULs are rejected.
 
 ## `modules[*]`
 
@@ -234,12 +302,20 @@ bodies.
 templates:
   - name: agent
     slots:
-      id:        { type: string, required: true }
-      clearance: { type: enum, values: [unclassified, confidential, secret, top_secret] }
+      id:
+        type: STRING
+        required: true
+      clearance:
+        type: SYMBOL
+        allowed: [unclassified, confidential, secret, top_secret]
   - name: data
     slots:
-      id:             { type: string, required: true }
-      classification: { type: enum, values: [unclassified, confidential, secret, top_secret] }
+      id:
+        type: STRING
+        required: true
+      classification:
+        type: SYMBOL
+        allowed: [unclassified, confidential, secret, top_secret]
 
 hierarchies:
   - name: clearance
@@ -253,20 +329,32 @@ functions:
 
 modules:
   - name: access-control
+    rules: [deny-overclearance]
 
 focus_order:
   - access-control
 
 rules:
   - name: deny-overclearance
-    module: access-control
     salience: -10
     when:
-      - { template: agent, bind: ?a, slots: {} }
-      - { template: data, bind: ?d, slots: {} }
-      - { template: agent, slot: clearance, op: below, value: $d.classification }
+      - template: agent
+        alias: a
+        conditions:
+          - slot: id
+            bind: ?aid
+          - slot: clearance
+            bind: ?ac
+      - template: data
+        alias: d
+        conditions:
+          - slot: classification
+            bind: ?dc
+          - slot: clearance
+            expression: below($d.classification)
     then:
-      - { decision: deny, reason: "agent {?a.id} clearance below {?d.classification}" }
+      action: deny
+      reason: "agent {aid} clearance {ac} below {dc}"
 ```
 
 ## See also

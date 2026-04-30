@@ -1,163 +1,139 @@
-# CLIPS Operator Cheatsheet
+# Fathom Operator Cheatsheet
 
-Operators usable in Fathom rule conditions and actions, grouped by category.
-Each entry: signature on one line, semantics on the next, minimal example.
-This is the surface authors interact with through the YAML; the underlying
-emission is documented in the fathom `concepts/yaml-compilation` source.
+Operators usable in Fathom rule conditions, grouped by category. Source of
+truth: `_compile_condition` in `fathom/compiler.py` and the
+`reference/yaml/rule.md` doc in the fathom source repo.
 
-## Equality / Comparison
+Conditions use functional-call syntax in YAML:
 
-`eq(<value>)` — slot value equals literal.
-- `{ slot: role, op: eq, value: admin }`
+```yaml
+- slot: <slot-name>
+  expression: <op>(<arg>)
+```
 
-`neq(<value>)` — slot value does not equal literal.
-- `{ slot: status, op: neq, value: revoked }`
+`arg` may be a literal scalar, a list, or a cross-fact reference
+`$alias.field` (resolved to `?alias-field` at compile time).
 
-`lt(<value>)` — slot value strictly less than.
-- `{ slot: amount, op: lt, value: 1000 }`
+## Comparison
 
-`lte(<value>)` — slot value less than or equal.
-- `{ slot: attempts, op: lte, value: 3 }`
+`equals(<value>)` — slot value equals literal.
+- `{ slot: role, expression: equals(admin) }`
 
-`gt(<value>)` — slot value strictly greater than.
-- `{ slot: severity, op: gt, value: 5 }`
+`not_equals(<value>)` — slot value does not equal literal.
+- `{ slot: status, expression: not_equals(revoked) }`
 
-`gte(<value>)` — slot value greater than or equal.
-- `{ slot: score, op: gte, value: 0.9 }`
+`greater_than(<value>)` — slot value strictly greater than.
+- `{ slot: severity, expression: greater_than(5) }`
+
+`less_than(<value>)` — slot value strictly less than.
+- `{ slot: amount, expression: less_than(1000) }`
 
 ## Set membership
 
-`in(<list>)` — slot value is one of the listed values.
-- `{ slot: currency, op: in, value: [USD, EUR, GBP] }`
+`in([...])` — slot value is one of the listed values.
+- `{ slot: currency, expression: in([USD, EUR, GBP]) }`
 
-`not_in(<list>)` — slot value is not in the list.
-- `{ slot: country, op: not_in, value: [KP, IR, CU] }`
+`not_in([...])` — slot value is not in the list.
+- `{ slot: country, expression: not_in([KP, IR, CU]) }`
 
-`subset(<list>)` — slot (multivalue) is a subset of the listed set.
-- `{ slot: scopes, op: subset, value: [read, list] }`
-
-`superset(<list>)` — slot (multivalue) is a superset of the listed set.
-- `{ slot: granted_scopes, op: superset, value: [read, write] }`
-
-## Logical combinators (in conditions)
-
-`and` — implicit by listing multiple conditions in `when:`.
-- ```yaml
-  when:
-    - { template: agent, slot: role, op: eq, value: admin }
-    - { template: agent, slot: clearance, op: gte, value: secret }
-  ```
-
-`or: [<conds>]` — disjunction of inner conditions.
-- ```yaml
-  when:
-    - or:
-        - { template: agent, slot: role, op: eq, value: admin }
-        - { template: agent, slot: role, op: eq, value: auditor }
-  ```
-
-`not: { ... }` — negated condition; matches when no fact satisfies inner.
-- `{ not: { template: revocation, slot: subject, op: eq, value: $a.id } }`
-
-`exists: { ... }` — true if at least one fact satisfies inner; bind not exposed.
-- `{ exists: { template: alert, slot: severity, op: gte, value: high } }`
-
-## String ops
-
-`matches(<regex>)` — slot string matches a Python regex (anchored as written).
-- `{ slot: email, op: matches, value: '.*@example\.com$' }`
-
-`starts_with(<prefix>)` — slot string starts with prefix.
-- `{ slot: path, op: starts_with, value: '/admin' }`
-
-`ends_with(<suffix>)` — slot string ends with suffix.
-- `{ slot: filename, op: ends_with, value: '.exe' }`
+## String
 
 `contains(<substring>)` — slot string contains substring.
-- `{ slot: user_input, op: contains, value: 'ignore previous instructions' }`
+- `{ slot: user_input, expression: contains("ignore previous instructions") }`
 
-## Arithmetic (in actions / bind expressions)
-
-`+`, `-`, `*`, `/`, `%` — standard arithmetic in CLIPS s-expression form.
-- `{ bind: ?total, value: "(+ $req.amount $req.fee)" }`
-- `{ bind: ?ratio, value: "(/ $r.failed $r.total)" }`
-- `{ bind: ?bucket, value: "(% $h.minutes 60)" }`
+`matches(<regex>)` — slot string matches a regex.
+- `{ slot: email, expression: matches(".*@example\.com$") }`
 
 ## Classification
 
-Lattice ordering for hierarchies declared via `hierarchies:` (e.g.
-`unclassified < confidential < secret < top_secret`). The four ops below
-require a `type: classification` function and a matching hierarchy.
+Lattice ordering for hierarchies declared via classification functions
+(`type: classification` with a `hierarchy_ref:`). The three ops below emit
+calls to the generated `<hier>-below`, `<hier>-meets-or-exceeds`, and
+`<hier>-within-scope` deffunctions.
 
-`below(<other>)` — left value's rank is strictly less than right's.
-- `{ slot: clearance, op: below, value: $d.classification }`
+`below(<other>)` — left rank is strictly less than right's.
+- `{ slot: clearance, expression: below($d.classification) }`
 
 `meets_or_exceeds(<other>)` — left rank >= right rank.
-- `{ slot: clearance, op: meets_or_exceeds, value: secret }`
-
-`dominates(<other>)` — total lattice ordering: left dominates right (>=).
-- `{ slot: label, op: dominates, value: $req.requested_label }`
-
-`compartment_subset(<other>)` — left compartment set is a subset of right.
-- `{ slot: compartments, op: compartment_subset, value: $clearance.compartments }`
-
-`compartment_intersects(<other>)` — left and right compartment sets share ≥1 elem.
-- `{ slot: tags, op: compartment_intersects, value: [SCI, NOFORN] }`
+- `{ slot: clearance, expression: meets_or_exceeds(secret) }`
 
 `within_scope(<other>)` — both values are in-hierarchy (rank >= 0).
-- `{ slot: clearance, op: within_scope, value: $d.classification }`
+- `{ slot: clearance, expression: within_scope($d.classification) }`
 
 ## Temporal
 
-Window arguments are ISO-8601 durations (`PT5M`) or seconds (int). All read
-back over the audit log of recently asserted facts; rule firings within the
-window contribute to the count/rate.
+Temporal operators emit `(test …)` CEs that call external functions
+registered at runtime. Window arguments are typically ISO-8601 durations
+(`PT5M`) or seconds (int).
 
-`count_exceeds(template, slot, threshold, window)` — N matching facts in window.
-- `{ test: "(count_exceeds login_failure user $u.id 5 PT15M)" }`
+`changed_within(<window>)` — slot value changed in window.
 
-`rate_exceeds(template, slot, rate_per_sec, window)` — sliding-window rate.
-- `{ test: "(rate_exceeds api_call endpoint /admin 10 PT1M)" }`
+`count_exceeds(<threshold>, <window>)` — N matching facts in window.
 
-`changed_within(template, slot, window)` — slot's value changed in window.
-- `{ test: "(changed_within agent role $a.id PT5M)" }`
+`rate_exceeds(<rate>, <window>)` — sliding-window rate.
 
-`last_n(template, n)` — bind the most-recent N facts of template.
-- `{ test: "(last_n login_event 10)" }`
+`last_n(<n>)` — bind the most-recent N facts of the template.
 
-`distinct_count(template, slot)` — number of distinct slot values in working mem.
-- `{ test: "(distinct_count session ip_address)" }`
+`distinct_count(<slot>)` — number of distinct slot values in working memory.
 
-`sequence_detected(events)` — ordered sequence of named event facts seen.
-- `{ test: "(sequence_detected (login_failure login_failure login_success))" }`
+`sequence_detected(<events>)` — ordered sequence of named event facts seen.
 
-## Pattern syntax
+Example:
 
-**Bind variables**: prefix `?` (e.g. `?sid`, `?amt`). Bound on the LHS, usable
-in peer conditions and on the RHS.
-- `{ template: session, bind: ?s, slots: { id: ?sid } }`
+```yaml
+- slot: user
+  expression: count_exceeds(5, PT15M)
+```
 
-**Wildcards**: `?_` matches any single value but does not bind.
-- `{ template: agent, slot: role, op: eq, value: ?_ }`
+## Logical combinators
 
-**Slot pattern matching**: in the `slots:` map of a `bind` condition, each
-entry is `<slot>: <pattern>`. A pattern may be a literal, a `?var` capture, a
-cross-fact ref (`$alias.slot`), or an anchored sub-expression.
-- `{ template: action, bind: ?act, slots: { actor: $a.id, type: read } }`
+Implicit AND: a `when` list of multiple `FactPattern` entries is conjunctive.
+Each pattern's `conditions:` list is also AND.
+
+There is no top-level `or:` / `not:` / `exists:` keyword in the YAML — these
+patterns are expressed using CLIPS-level test CEs (the `test:` shape) when
+required.
+
+## Cross-fact references and binds
+
+**Bind variable:** `bind: ?var` on a slot captures the slot's value. The
+variable is then usable in peer `expression:` args (via the alias prefix) or
+in `test:` CEs and on the RHS.
+
+```yaml
+when:
+  - template: session
+    alias: s
+    conditions:
+      - slot: id
+        bind: ?sid
+  - template: action
+    conditions:
+      - slot: actor
+        expression: equals($s.id)
+```
+
+`$alias.slot` cross-references resolve to `?alias-slot` in the emitted CLIPS.
+
+## Test CEs (escape hatch)
+
+```yaml
+- test: (my-fn ?sid)
+```
+
+Any parenthesized CLIPS expression. Used to invoke functions registered via
+`Engine.register_function`. Emitted after all pattern CEs, in source order.
 
 ## Conflict resolution
 
-When multiple rules are eligible at the same instant, Fathom resolves them in
-this fixed order:
+When multiple rules are eligible at the same instant:
 
 1. **Salience.** Higher `salience` fires first; lower `salience` fires later.
-2. **Most recent fact (recency).** Within the same salience tier, the rule
-   matching the most recently asserted fact fires first.
-3. **Declared order.** Final tiebreak. Earlier-declared rule fires first.
-
-The fail-closed convention is to give `deny` rules **lower** salience than
-`allow` rules so `deny` fires *last* and last-write-wins on the decision fact
-overwrites any prior `allow`.
+2. **Last-write-wins on the decision fact.** The lower-salience rule fires
+   *later* and overwrites prior decisions. Fail-closed convention: `deny`
+   rules below `allow` rules so `deny` wins on conflict.
+3. **Declared order tiebreak.** Within a salience tier, earlier-declared
+   rules fire first.
 
 ## See also
 

@@ -42,28 +42,55 @@ result.attestation  # JWS string (Ed25519)
 templates:
   - name: agent
     slots:
-      id: { type: string, required: true }
-      clearance: { type: enum, values: [unclassified, confidential, secret, top_secret] }
+      id:
+        type: STRING
+        required: true
+      clearance:
+        type: SYMBOL
+        allowed: [unclassified, confidential, secret, top_secret]
+
 rules:
   - name: deny-overclearance
     when:
-      - { template: agent, slot: clearance, op: below, value: data_classification }
+      - template: agent
+        alias: a
+        conditions:
+          - slot: clearance
+            expression: below(secret)
+      - template: data_request
+        conditions:
+          - slot: classification
+            expression: equals(secret)
     then:
-      - { decision: deny, reason: "insufficient clearance" }
+      action: deny
+      reason: "agent clearance below requested classification"
+
 modules:
   - name: access-control
     rules: [deny-overclearance]
+
 functions:
-  - name: classification_dominates
+  - name: clearance-check
     args: [a, b]
     body: ...
 ```
 
+Conditions use functional-call expressions: `expression: <op>(<arg>)`. `arg`
+may be a literal or cross-fact reference `$alias.field`. `then` is a single
+`ThenBlock` dict (with `action`, `reason`, optional `assert: [...]`) — not a
+list.
+
 ## Operators
 
-- Classification: `below`, `meets_or_exceeds`, `dominates`, compartment ops.
-- Temporal: `count_exceeds`, `rate_exceeds`, `changed_within`, `last_n`, `distinct_count`, `sequence_detected`.
-- See `references/clips-cheatsheet.md` for full list.
+Functional syntax: `expression: <op>(<arg>)`.
+
+- Comparison: `equals`, `not_equals`, `greater_than`, `less_than`
+- Set: `in`, `not_in`
+- String: `contains`, `matches`
+- Classification: `below`, `meets_or_exceeds`, `within_scope`
+- Temporal: `changed_within`, `count_exceeds`, `rate_exceeds`, `last_n`, `distinct_count`, `sequence_detected`
+
+See `references/clips-cheatsheet.md` for the full catalogue.
 
 ## REST Endpoints
 

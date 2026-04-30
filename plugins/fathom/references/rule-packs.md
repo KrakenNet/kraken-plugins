@@ -1,8 +1,8 @@
 # Rule Packs
 
-Catalogue of rule packs that ship with Fathom or are planned. Each pack lives
-under `src/fathom/rule_packs/<pack-name>/` in the source repo. Pack versions
-pin to a specific spec revision; bump the pack's `version:` when the spec
+Catalogue of rule packs that ship with Fathom. Each pack lives under
+`src/fathom/rule_packs/<pack-name>/` in the source repo. Pack versions pin
+to a specific spec revision; bump the pack's `version:` when the spec
 changes.
 
 ## fathom-owasp-agentic
@@ -67,9 +67,10 @@ triage decision tree.
 - **Pack version:** `2.0.3` (pins exactly to the CISA spec rev).
 - **Rule count:** 17 (one per branch of the v2.0.3 decision tree).
 - **Modules:** `ssvc`
-- **Templates:** `exploitation`, `exposure`, `automatable`, `mission_impact`,
+- **Templates:** `automatable`, `exploitation`, `exposure`, `mission_impact`,
   `ssvc_meta`
-- **Decision space (outputs):** `Act`, `Attend`, `Track*`, `Track`
+- **Decision space:** `route` — each rule emits `action: route` with the SSVC
+  outcome (`Act`, `Attend`, `Track*`, `Track`) carried in `reason`.
 - **Inputs:** Exploitation (`none|poc|active`), Exposure
   (`small|controlled|open`), Automatable (`yes|no`), MissionImpact
   (`degraded|mef_support_crippled|mef_failure|mission_failure`)

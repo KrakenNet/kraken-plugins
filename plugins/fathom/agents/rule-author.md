@@ -21,9 +21,14 @@ tools: [Bash, Read, Write, Edit]
 rules:
   - name: <rule-name>
     when:
-      - { template: ..., slot: ..., op: ..., value: ... }
+      - template: <template>
+        alias: <alias>            # optional; required for $alias.field cross-refs
+        conditions:
+          - slot: <slot>
+            expression: <op>(<arg>)
     then:
-      - { decision: <decision>, reason: "<rendered reason>" }
+      action: <decision>
+      reason: "<rendered reason>"
 ```
 
 3. Write `<pack-dir>/tests/test_<rule-name>.py` covering each test case.
