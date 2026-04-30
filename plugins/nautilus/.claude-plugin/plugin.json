@@ -1,0 +1,9 @@
+{
+  "name": "nautilus",
+  "version": "0.1.0",
+  "description": "Author and operate Nautilus brokers — scaffold sources, adapters, and rule packs; drive request/sources/caps APIs; verify attestations and tail audit logs.",
+  "author": {"name": "kraken-networks"},
+  "repository": "https://github.com/KrakenNet/nautilus",
+  "license": "MIT",
+  "keywords": ["nautilus","data-broker","adapters","attestation","authoring","operations","cost-caps"]
+}
