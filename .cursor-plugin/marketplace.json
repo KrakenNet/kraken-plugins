@@ -1,22 +1,56 @@
 {
-  "name": "railyard",
+  "name": "kraken",
   "owner": {
-    "name": "railyard-team"
+    "name": "kraken-networks"
   },
   "metadata": {
-    "description": "Guided creation and management of Railyard platform entities via REST API"
+    "description": "Kraken Networks plugin suite — railyard, kb, fathom, nautilus, harbor"
   },
   "plugins": [
     {
       "name": "railyard",
-      "description": "Guided creation and management of Railyard platform entities (agents, governors, tools, workflows, credentials, knowledge graph, memories, chat sessions, knowledge bases, integrations, inbound sources, LLM models) via REST API with iterative build-test-fix verification.",
-      "version": "1.1.0",
-      "author": {
-        "name": "railyard-team"
-      },
+      "description": "Guided creation and management of Railyard platform entities (agents, governors, tools, workflows, credentials, knowledge graph, memories, chat sessions, knowledge bases, integrations, inbound sources, LLM models, ML stack, pipelines, skills, chatbots, budgets, alerts, compliance, dashboards, webhooks) via REST API with iterative build-test-fix verification.",
+      "version": "1.2.0",
+      "author": {"name": "kraken-networks"},
       "source": "./plugins/railyard",
       "category": "development",
-      "tags": ["railyard", "agents", "governors", "tools", "workflows", "credentials", "knowledge-graph", "clips", "api", "chat", "integrations", "inbound-sources", "llm-models", "portability"]
+      "tags": ["railyard","agents","governors","tools","workflows","credentials","knowledge-graph","clips","api","chat","integrations","inbound-sources","llm-models","ml","pipelines","skills","chatbots","budgets","alerts","compliance","dashboards","webhooks","portability"]
+    },
+    {
+      "name": "kb",
+      "description": "Kraken Knowledge Base lifecycle management — works with railyard, fathom, nautilus, harbor. Create, update, audit, lint, and manage KB articles with automatic staleness detection and KB-first development enforcement.",
+      "version": "0.3.0",
+      "author": {"name": "kraken-networks"},
+      "source": "./plugins/kraken-kb",
+      "category": "development",
+      "tags": ["knowledge-base","documentation","enforcement","audit","lint","railyard","fathom","nautilus","harbor"]
+    },
+    {
+      "name": "fathom",
+      "description": "Author and operate Fathom CLIPS rule packs — scaffold packs, templates, and rules; validate/test/bench locally; evaluate, hot-reload, and verify artifacts against a running engine.",
+      "version": "0.1.0",
+      "author": {"name": "kraken-networks"},
+      "source": "./plugins/fathom",
+      "category": "development",
+      "tags": ["fathom","clips","rules","rule-packs","attestation","authoring","operations"]
+    },
+    {
+      "name": "nautilus",
+      "description": "Author and operate Nautilus brokers — scaffold sources, adapters, and rule packs; drive request/sources/caps APIs; verify attestations and tail audit logs.",
+      "version": "0.1.0",
+      "author": {"name": "kraken-networks"},
+      "source": "./plugins/nautilus",
+      "category": "development",
+      "tags": ["nautilus","data-broker","adapters","attestation","authoring","operations","cost-caps"]
+    },
+    {
+      "name": "harbor",
+      "description": "Author Harbor graphs, skills, nodes, tools, and Bosun rule packs; run/replay graphs against harbor serve and inspect checkpoints.",
+      "version": "0.1.0",
+      "author": {"name": "kraken-networks"},
+      "source": "./plugins/harbor",
+      "category": "development",
+      "tags": ["harbor","graphs","skills","tools","provenance","authoring","orchestration"]
     }
   ]
 }
