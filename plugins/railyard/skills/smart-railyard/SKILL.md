@@ -88,6 +88,78 @@ DATA=$(echo "$RESULT" | jq '.data')
 
 All list endpoints: `?limit=N&offset=M` (defaults: limit=20, offset=0, max=100)
 
+## Cursor Pagination
+
+Some list endpoints support cursor pagination for stable iteration over large result sets:
+- `/api/v1/executions/{id}/steps` — clamped at limit=200
+- `/api/v1/executions/{id}/trace` — clamped at limit=200
+
+Pattern:
+
+```bash
+URL="${RAILYARD_URL}/api/v1/executions/$EXEC_ID/steps?limit=200"
+while [ -n "$URL" ]; do
+  RESP=$(curl -s "$URL" -H "Authorization: Bearer ${TOKEN}")
+  echo "$RESP" | jq '.data[]'
+  NEXT=$(echo "$RESP" | jq -r '.meta.next_cursor // empty')
+  [ -z "$NEXT" ] && break
+  URL="${RAILYARD_URL}/api/v1/executions/$EXEC_ID/steps?limit=200&cursor=$NEXT"
+done
+```
+
+If a list endpoint returns >200 rows without a cursor, fall back to `?offset=&limit=`.
+
+## WS Streaming Helpers
+
+Long-running flows can attach to WebSocket endpoints for real-time updates. Each frame is JSON with at least:
+
+```json
+{"seq": 42, "event_type": "step.completed", "payload": {...}, "timestamp": "2026-04-30T12:00:00Z"}
+```
+
+Connect via `websocat` (or any WS client) using the same bearer token. The base URL is the HTTP base with the scheme swapped to `ws`/`wss`.
+
+### Execution Livetail — `/api/v1/ws/v1/executions/<execId>/events?since=<seq>`
+
+Replays from the ExecutionHub buffer (last 1000 events) when `since` is set, then streams live.
+
+```bash
+websocat -H "Authorization: Bearer $TOKEN" \
+  "${RAILYARD_URL/http/ws}/api/v1/ws/v1/executions/$EXEC_ID/events?since=0"
+```
+
+### Training Progress — `/api/v1/ws/training/<runId>`
+
+```bash
+websocat -H "Authorization: Bearer $TOKEN" \
+  "${RAILYARD_URL/http/ws}/api/v1/ws/training/$RUN_ID"
+```
+
+### User Notifications — `/api/v1/ws/notifications`
+
+User-scoped fan-out of notification events.
+
+```bash
+websocat -H "Authorization: Bearer $TOKEN" \
+  "${RAILYARD_URL/http/ws}/api/v1/ws/notifications"
+```
+
+### Trace Monitor — `/api/v1/ws/traces/monitor`
+
+Live span/trace events across the platform.
+
+```bash
+websocat -H "Authorization: Bearer $TOKEN" \
+  "${RAILYARD_URL/http/ws}/api/v1/ws/traces/monitor"
+```
+
+### Chat — `/api/v1/ws/chat/<sessionId>`
+
+```bash
+websocat -H "Authorization: Bearer $TOKEN" \
+  "${RAILYARD_URL/http/ws}/api/v1/ws/chat/$SESSION_ID"
+```
+
 ## Verify-Before-Call Pattern
 
 1. **Health check first**: `GET /api/v1/health` — confirm API is reachable
@@ -111,7 +183,12 @@ Cross-cutting pattern for commands that need credentials:
 | 401 | Token expired/invalid | Prompt re-auth via `/railyard:auth` |
 | 409 | Duplicate entity | Offer to use existing or rename |
 | 422 | Validation error | Parse details, explain, ask correction |
+| 429 | Rate limit (per-user limiter from `feat(unlimited-void)`) | Back off using `Retry-After` header; surface to user if persistent |
 | 500/503 | Server error | "API down — is the container running?" |
+
+### Workflow Execution Notes
+
+`POST /api/v1/workflows/{id}/execute` accepts an optional `execution_name` field — a human-readable nickname surfaced in execution lists, traces, and the livetail WS. Pass it through whenever the user supplies one (e.g. via `--nickname` on `/railyard:workflow`).
 
 ## Build-Test-Fix Loop
 
