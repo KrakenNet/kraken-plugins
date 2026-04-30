@@ -11,11 +11,45 @@ Autonomous — no user interaction after receiving delegation context.
 
 <input>
 Received via Task delegation:
-- action: ingest_document | build_kg | explore_graph | create_nodes | create_memory | search_memory | maintain_memory
+- action: ingest_document | build_kg | explore_graph | create_nodes | create_memory | search_memory | maintain_memory | manage_embeddings | run_retrieval | list_kg_summaries | list_kg_entities | list_kg_communities
 - Context fields per action
 - TOKEN: JWT for API auth
 - RAILYARD_URL: API base URL
 </input>
+
+<resource-schemas>
+## Resource Schemas
+
+Interview prompts for sub-resources. Ask only what's required for the chosen action.
+
+### embeddings (`/api/v1/embeddings`)
+- **model** — embedding model name (e.g. `text-embedding-3-small`)
+- **dimensions** — integer; must match the model
+- **source_doc_id** — optional UUID linking the vector to its source document
+
+For `POST /embeddings/search`:
+- **query** — search text
+- **k** — top-k results to return
+- **filter** — optional metadata filter object
+
+### retrieval (`/api/v1/retrieval`)
+- **query** — search text
+- **k** — top-k results
+- **filter** — optional metadata filter
+- **kb_id** — knowledge base UUID to scope retrieval
+
+### kg-summaries (`/api/v1/knowledge-graph/summaries`)
+- **community_id** — community UUID to filter summaries; omit for paginated list
+
+### kg-entities (`/api/v1/knowledge-graph/entities`)
+- **kb_id** — knowledge base UUID
+- **entity_type** — optional filter (e.g. `Person`, `Org`)
+- include `?include=relationships` to fetch edges inline
+
+### kg-communities (`/api/v1/knowledge-graph/communities`)
+- **kb_id** — knowledge base UUID
+- **level** — integer; `0` = top-level partition
+</resource-schemas>
 
 <skills>
 Load before executing:
