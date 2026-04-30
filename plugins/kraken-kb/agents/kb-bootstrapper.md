@@ -10,10 +10,29 @@ Autonomous — no user interaction after receiving delegation context.
 </role>
 
 <input>
-Received via Task delegation:
-- domains: list of objects, each with { name, go_packages, schema_files, frontend_pages, kb_path }
-- mode: skeleton | full
-- project_root: absolute path to the project
+Received via Task delegation.
+
+## Inputs
+
+- `project_name` — one of `railyard`, `fathom`, `nautilus`, `harbor` (also accepts ad-hoc names; falls back to language-based profile)
+- `project_root` — absolute path to the target project's repo
+- `kb_dir` — relative directory under `project_root` for the KB (default: `docs/`)
+- `index_template` — string template for `_index.md`; defaults to the Railyard `_index.md` shape
+- `domains` — list of objects, each with `{ name, go_packages, schema_files, frontend_pages, kb_path }` (optional; if omitted, derived from the project profile's scan dirs)
+- `mode` — `skeleton` | `full`
+
+## Project Profiles
+
+When bootstrapping a KB, choose scan rules based on `project_name`:
+
+| Project | Scan dirs |
+|---|---|
+| railyard | `internal/`, `cmd/`, `web-*-ui/src/pages/`, `supabase/volumes/db/init/` |
+| fathom | `src/fathom/`, `rule-packs/`, `tests/` |
+| nautilus | `src/nautilus/`, `tests/`, plus root `nautilus.yaml` |
+| harbor | `src/harbor/`, `design-docs/`, `specs/`, `tests/` |
+| (fallback Python) | `src/` (or detected `<package>/`), `tests/` |
+| (fallback Go) | `internal/`, `cmd/` |
 </input>
 
 <skills>
@@ -25,13 +44,19 @@ Load before executing:
 
 ## Bootstrap Flow
 
+### 0. Resolve Project Profile
+
+Resolve the scan rules for `project_name` from the **Project Profiles** table above. If `project_name` is unknown, detect language (Go vs Python) and use the matching fallback. Use the resolved scan dirs to seed the routing index in step 6 — do **not** hardcode railyard's `internal/`, `cmd/`, `web-*-ui/`, or `supabase/` paths into the generated `_index.md` for non-railyard projects.
+
+All paths below are relative to `<project_root>/<kb_dir>/` (default `<project_root>/docs/`). Substitute that prefix for `docs/` throughout the steps.
+
 ### 1. Create Directory Structure
 
 For each domain, create the KB directory:
 ```bash
-mkdir -p docs/<domain>/
-mkdir -p docs/platform/
-mkdir -p docs/_prompts/
+mkdir -p <project_root>/<kb_dir>/<domain>/
+mkdir -p <project_root>/<kb_dir>/platform/
+mkdir -p <project_root>/<kb_dir>/_prompts/
 ```
 
 ### 2. Create Maintenance Prompts
@@ -185,7 +210,7 @@ Delegate to the `kb-writer` agent (via Agent tool) for each domain with:
 
 ### 6. Create Routing Index
 
-Create `docs/_index.md` with this structure:
+Create `<project_root>/<kb_dir>/_index.md` using `index_template` (defaults to the Railyard `_index.md` shape):
 
 ```markdown
 # Knowledge Base — Routing Index
@@ -197,15 +222,15 @@ Read the section matching your task. Load ONLY the listed articles.
 ## By Task
 ```
 
-For each domain, add task-based routing sections:
-```markdown
-### Working on <domain> UI or CRUD
-- <domain>/overview.md
-- platform/ui-patterns.md
+Seed the task-based routing sections from the resolved project profile's scan dirs and the discovered/passed-in domains. Do not assume railyard-specific patterns (`internal/`, `web-*-ui/`, `supabase/`) unless the project profile is `railyard`.
 
-### Working on <domain> execution or runtime
+For each domain, add a task-based section:
+```markdown
+### Working on <domain>
 - <domain>/overview.md
 ```
+
+If the project profile includes UI scan dirs, also add a `platform/ui-patterns.md` line under UI-touching domains.
 
 ### 7. Update CLAUDE.md
 
