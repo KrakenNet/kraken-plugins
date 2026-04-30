@@ -25,23 +25,27 @@ Do NOT activate for: docs-only changes, plugin work, config-only changes, or non
 
 Identify which domain(s) the task touches by mapping file paths:
 
-| Path Pattern | Domain |
-|---|---|
-| `internal/agent/` (excluding `tool_executor.go`, `pipeline/`) | agents |
-| `internal/agent/tool_executor.go`, `internal/agent/pipeline/` | tools |
-| `internal/governor/` | governors |
-| `internal/workflow/`, `internal/workflow/engine/` | workflows |
-| `internal/rag/`, `internal/knowledge/`, `internal/knowledgebase/`, `internal/memory/`, `internal/retrieval/` | knowledge |
-| `internal/integration/` | integrations |
-| `internal/gomlx/`, `internal/onnxrt/` | ml |
-| `internal/credential/` | credentials |
-| `internal/compliance/` | compliance |
-| `internal/tracing/` | tracing |
-| `internal/platform/chat/` | chat |
-| `web-dev-ui/src/pages/<X>/` | map page directory name to domain |
-| `supabase/volumes/db/init/` | schema — cross-reference migration filename (e.g., `0010` → agents) |
-| `internal/api/` | platform |
-| `cmd/server/` | platform |
+| Path Pattern | Domain | Sub-articles to consider |
+|---|---|---|
+| `internal/agent/` (excluding `tool_executor.go`, `pipeline/`) | agents | overview, looping, budget, enrichers, interceptors, demonstrations, optimizers, skills, chat |
+| `internal/agent/modules/` | agents/modules | modules/overview + modules/<name> for the specific module touched |
+| `internal/agent/tool_executor.go`, `internal/agent/pipeline/` | tools | overview |
+| `internal/governor/` | governors | overview |
+| `internal/workflow/`, `internal/workflow/engine/` | workflows | overview, execution, human-in-the-loop, requests/, steps/ |
+| `internal/rag/`, `internal/retrieval/` | knowledge | overview, rag/, knowledge-bases |
+| `internal/knowledge/`, `internal/knowledgebase/` | knowledge | overview, knowledge-bases, access-control, knowledge-graphs/ |
+| `internal/memory/` | knowledge | memories |
+| `internal/integration/` | integrations | overview |
+| `internal/gomlx/`, `internal/onnxrt/`, `internal/ml/` | machine-learning | overview, model-definitions, datasets, layers, training-runs, pre-trained-models, inference |
+| `internal/credential/` | credentials | overview |
+| `internal/compliance/` | compliance | overview |
+| `internal/tracing/` | tracing | overview |
+| `internal/platform/chat/` | chat | overview |
+| `internal/platform/portals/`, `web-*-ui/src/pages/` | portals | overview + page-specific |
+| `web-dev-ui/src/pages/<X>/` | map page directory name to domain | — |
+| `supabase/volumes/db/init/` | schema | cross-reference migration filename |
+| `internal/api/` | platform | overview |
+| `cmd/server/` | platform | overview |
 
 If no domain can be determined, skip enforcement silently.
 
@@ -50,6 +54,10 @@ If no domain can be determined, skip enforcement silently.
 1. Read `docs/_index.md`
 2. Find the routing section(s) that match the detected domain(s) and task description
 3. Read each listed article
+
+## Step 2.5: Module-Aware Routing
+
+If the changed file is under `internal/agent/modules/<module>/`, also load `docs/agents/modules/<module>.md` if present. If the file references a specific DSPy module type (predict, chain_of_thought, react, etc.) that the diff/PR changes, prefer that module's article over the generic overview.
 
 ## Step 3: Check Gap Files
 

@@ -1,10 +1,10 @@
 {
   "name": "kb",
-  "version": "0.2.0",
-  "description": "Knowledge Base lifecycle management and enforcement for the Railyard project. Create, update, audit, lint, and manage KB articles with automatic staleness detection and KB-first development enforcement.",
+  "version": "0.3.0",
+  "description": "Kraken Knowledge Base lifecycle management. Create, update, audit, lint, and manage KB articles across railyard, fathom, nautilus, and harbor projects with automatic staleness detection and KB-first development enforcement.",
   "author": {
-    "name": "railyard-team"
+    "name": "kraken-networks"
   },
   "license": "MIT",
-  "keywords": ["knowledge-base", "documentation", "enforcement", "audit", "lint", "railyard"]
+  "keywords": ["knowledge-base","documentation","enforcement","audit","lint","railyard","fathom","nautilus","harbor"]
 }
