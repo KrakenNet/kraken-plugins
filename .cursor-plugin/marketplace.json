@@ -45,12 +45,12 @@
     },
     {
       "name": "harbor",
-      "description": "Author Harbor graphs, skills, nodes, tools, and Bosun rule packs; run/replay graphs against harbor serve and inspect checkpoints.",
-      "version": "0.1.0",
+      "description": "Author + operate Harbor — graphs, skills, nodes, tools, triggers, Bosun rule packs, markdown SKILL.md skills, directory-based plugins; run/replay/counterfactual against harbor serve, drive HITL, inspect checkpoints.",
+      "version": "0.3.0",
       "author": {"name": "kraken-networks"},
       "source": "./plugins/harbor",
       "category": "development",
-      "tags": ["harbor","graphs","skills","tools","provenance","authoring","orchestration"]
+      "tags": ["harbor","graphs","skills","tools","triggers","provenance","authoring","orchestration","hitl","counterfactual","bosun","skill-md","dir-plugin"]
     }
   ]
 }

@@ -8,7 +8,7 @@ A Claude Code / Cursor plugin marketplace covering the Kraken Networks stack:
 | **kb** | Knowledge-base lifecycle for any Kraken project | 0.3.0 |
 | **fathom** | Author + operate Fathom CLIPS rule packs | 0.1.0 |
 | **nautilus** | Author + operate Nautilus data brokers | 0.1.0 |
-| **harbor** | Author Harbor orchestration graphs, skills, and tools | 0.1.0 |
+| **harbor** | Author Harbor orchestration graphs, skills, tools, markdown SKILL.md skills, directory plugins | 0.3.0 |
 
 ## Install (Claude Code)
 
