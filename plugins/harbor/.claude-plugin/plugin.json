@@ -1,0 +1,9 @@
+{
+  "name": "harbor",
+  "version": "0.1.0",
+  "description": "Author Harbor graphs, skills, nodes, tools, and Bosun rule packs; run/replay graphs against harbor serve and inspect checkpoints.",
+  "author": {"name": "kraken-networks"},
+  "repository": "https://github.com/KrakenNet/harbor",
+  "license": "Apache-2.0",
+  "keywords": ["harbor","graphs","skills","tools","provenance","authoring","orchestration"]
+}

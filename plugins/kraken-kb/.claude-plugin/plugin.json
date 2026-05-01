@@ -1,0 +1,10 @@
+{
+  "name": "kb",
+  "version": "0.3.0",
+  "description": "Kraken Knowledge Base lifecycle management. Create, update, audit, lint, and manage KB articles across railyard, fathom, nautilus, and harbor projects with automatic staleness detection and KB-first development enforcement.",
+  "author": {
+    "name": "kraken-networks"
+  },
+  "license": "MIT",
+  "keywords": ["knowledge-base","documentation","enforcement","audit","lint","railyard","fathom","nautilus","harbor"]
+}

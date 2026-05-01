@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "nautilus-broker": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "nautilus", "serve", "--transport", "mcp", "--config", "${NAUTILUS_CONFIG:-./nautilus.yaml}"]
+    }
+  }
+}

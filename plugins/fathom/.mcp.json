@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "fathom-engine": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "python", "-m", "fathom.integrations.mcp_server"],
+      "env": {
+        "FATHOM_RULES_DIR": "${FATHOM_RULES_DIR:-./rules}"
+      }
+    }
+  }
+}

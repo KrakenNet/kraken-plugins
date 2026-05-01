@@ -1,0 +1,110 @@
+---
+name: smart-harbor
+description: Core skill for all Harbor plugin commands and agents — vocabulary, state-fact boundary, provenance, store protocols, Bosun rule-pack mounting, harbor serve, project detection.
+version: 1.0.0
+user-invocable: false
+---
+
+# Smart Harbor
+
+## Configuration
+
+| Setting | Default | Override |
+|---|---|---|
+| Local install | `uv add harbor` | — |
+| Serve URL | `http://localhost:9000` | `HARBOR_URL` |
+| Auth token | none | `HARBOR_TOKEN` |
+| Graphs dir | `./graphs` | `HARBOR_GRAPHS_DIR` |
+
+## Project Detection
+
+`pyproject.toml` `name = "harbor"` → contributor mode (scan `src/harbor/`, `design-docs/`, `specs/`).
+
+## Vocabulary
+
+| Term | Definition |
+|---|---|
+| Graph | Definition: nodes, state schema, rules, governance. Blueprint, not running thing. |
+| Run | Single execution of a graph (`run_id`). |
+| Node | Unit of work — DSPy module, ML model, tool call, retrieval, sub-graph. |
+| State | Pydantic-typed bundle flowing through a run. |
+| Annotated state | Subset mirrored into CLIPS at node boundaries. |
+| Fact | CLIPS tuple — mirrored from annotated state, emitted by runtime, or asserted by rules. |
+| Rule | Fathom/CLIPS production matching facts; emits `goto`/`parallel`/`halt`. |
+| Pack | Versioned named rule collection (Bosun-style). |
+| Tool | Typed callable (JSON Schema + namespace + permissions + side-effect flags). |
+| Skill | Bundle of tools, optional sub-graph, optional prompt fragment. |
+| Plugin | Pip-installable Python package shipping skills/tools/nodes/stores via entry points. |
+| Store | Data tier abstraction — Vector/Graph/Doc/Memory/Fact. |
+| Provider | Concrete Store implementation (LanceDB, Kuzu, SQLite, …). |
+| Checkpoint | Persisted snapshot at a transition. |
+| Graph hash | Topology + node signatures + state schema. |
+| Trigger | External run initiator — cron / webhook / file_watch / mcp / manual. |
+
+## State-Fact Boundary
+
+- Mutate State freely inside a node (Python).
+- On node exit, mirror annotated fields into CLIPS, fire rules, persist checkpoint.
+- Source of truth: State. Facts are projection.
+
+## Provenance-typed Facts
+
+Every fact carries `(origin, source, run_id, step, confidence, timestamp)`. `origin ∈ {llm, tool, user, rule, model, external}`.
+
+## Stores
+
+Protocols: `VectorStore`, `GraphStore`, `DocStore`, `MemoryStore`, `FactStore`. Default providers: LanceDB, Kuzu, SQLite (embedded).
+
+## harbor.yaml (sketch)
+
+```yaml
+name: research
+state: ./state.py:State
+nodes:
+  - name: think
+    type: dspy:ChainOfThought
+  - name: act
+    type: tool:browser.search
+rules:
+  - pack: bosun:routing/research
+governance:
+  - bosun:budgets
+  - bosun:audit
+stores:
+  vector: lancedb:./.lance
+  graph: kuzu:./.kuzu
+  doc: sqlite:./.docs
+checkpoints:
+  every: node-exit
+  store: sqlite:./.checkpoints
+```
+
+## Graph Hash
+
+`sha256(topology + node_signatures + state_schema)`. Checkpoints carry the hash. Resume rejects on mismatch unless `migrate:` declared.
+
+## REST + WS Endpoints (harbor serve)
+
+| Verb | Path | Purpose |
+|---|---|---|
+| POST | /v1/runs | start a run |
+| GET | /v1/runs/{id} | run status |
+| GET | /v1/runs/{id}/checkpoints | list checkpoints |
+| POST | /v1/runs/{id}/replay | replay from checkpoint |
+| GET | /v1/graphs | list registered graphs |
+| WS | /v1/runs/{id}/events | stream run events |
+| GET | /health, /ready | probes |
+
+## CLI
+
+`harbor serve / run / replay / checkpoints / graphs list / graph verify`.
+
+## Verify-Before-Call
+
+1. `GET /health`.
+2. `GET /v1/graphs` — confirm graph registered before run.
+3. After run start, GET `/v1/runs/<id>` — confirm transitioned out of PENDING.
+
+## Build-Test-Fix
+
+Same 5-iter pattern.
