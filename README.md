@@ -13,15 +13,14 @@ A Claude Code / Cursor plugin marketplace covering the Kraken Networks stack:
 ## Install (Claude Code)
 
 ```bash
-# From this directory
-claude plugins marketplace add ./
+claude plugins marketplace add KrakenNet/kraken-plugins
 claude plugins install railyard kb fathom nautilus harbor
 ```
 
 ## Install (Cursor)
 
 ```bash
-cursor plugins marketplace add ./
+cursor plugins marketplace add KrakenNet/kraken-plugins
 cursor plugins install railyard kb fathom nautilus harbor
 ```
 
