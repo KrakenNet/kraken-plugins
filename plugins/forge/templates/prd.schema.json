@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "forge prd.json",
+  "type": "object",
+  "required": ["version", "feature", "created", "tasks"],
+  "properties": {
+    "version": {"const": 1},
+    "feature": {"type": "string"},
+    "created": {"type": "string", "format": "date-time"},
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "description", "files", "covers_tests", "covers_criteria", "depends_on", "passes", "attempts"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+          "title": {"type": "string"},
+          "description": {"type": "string"},
+          "files": {"type": "array", "items": {"type": "string"}},
+          "covers_tests": {"type": "array", "items": {"type": "string"}},
+          "covers_criteria": {"type": "array", "items": {"type": "string"}},
+          "depends_on": {"type": "array", "items": {"type": "string"}},
+          "passes": {"type": "boolean"},
+          "attempts": {"type": "integer", "minimum": 0},
+          "commit": {"type": ["string", "null"]},
+          "blocked_reason": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

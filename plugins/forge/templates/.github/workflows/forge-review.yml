@@ -1,0 +1,143 @@
+name: Forge Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  anti-cheat:
+    name: Anti-Cheat Final Sweep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run anti-cheat full pass
+        run: |
+          if [ -f .forge/scripts/anti-cheat-scan.sh ]; then
+            bash .forge/scripts/anti-cheat-scan.sh full
+          else
+            echo "anti-cheat script not vendored; relying on plugin install"
+          fi
+
+  security-review:
+    name: Security Review (OWASP)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Claude security review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review the diff in this PR against OWASP Top 10. Focus on:
+            injection, broken auth, sensitive data exposure, XXE, broken access
+            control, security misconfiguration, XSS, insecure deserialization,
+            known-vulnerable components, insufficient logging.
+            Comment inline on specific lines. Open a PR review if any
+            block-severity issue found.
+
+  perf-review:
+    name: Performance Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Claude performance review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review diff for performance issues: nested loops with quadratic
+            cost when linear is possible, unbatched DB calls (N+1), unbounded
+            memory growth, blocking I/O in hot paths, missing pagination,
+            missing indexes implied by query shape. Comment inline.
+
+  arch-review:
+    name: Architecture Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Claude architecture review (drift from shared.md)
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Read .forge/shared.md (architectural contract). Compare with the
+            actual diff. Flag any drift: new abstractions not in shared.md,
+            files outside the file plan, interfaces that diverge from the
+            contract, dependencies not declared. Comment inline.
+
+  e2e-gauntlet:
+    name: E2E Adversarial Gauntlet
+    runs-on: ubuntu-latest
+    needs: [security-review, perf-review, arch-review]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Spin up staging container
+        run: docker compose -f docker-compose.staging.yml up -d
+      - name: Run Playwright contracts
+        run: |
+          if [ -d .forge/contracts ]; then
+            npx playwright test .forge/contracts/*.spec.ts
+          fi
+      - name: Run Postman contracts
+        run: |
+          if ls .forge/contracts/*.postman.json 2>/dev/null; then
+            for f in .forge/contracts/*.postman.json; do
+              newman run "$f"
+            done
+          fi
+      - name: Run Docker bash contracts
+        run: |
+          if ls .forge/contracts/*.docker.sh 2>/dev/null; then
+            for f in .forge/contracts/*.docker.sh; do
+              bash "$f"
+            done
+          fi
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.staging.yml down
+
+  ci-autofixer:
+    name: CI Auto-Fixer
+    if: failure()
+    needs: [anti-cheat, security-review, perf-review, arch-review, e2e-gauntlet]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Claude reads failure logs and patches
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            One or more Forge Review jobs failed. Read the failure logs from
+            the workflow. Identify the root cause. Patch the code on this
+            branch. Push the fix. Do not bypass checks. Do not modify
+            .forge/tests-locked.json or any locked test file. If unable to
+            fix, comment on the PR with the specific blocker.
+
+  specum-formatter:
+    name: PR Body Formatter
+    if: success()
+    needs: [e2e-gauntlet]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rewrite PR body with high-signal summary
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            All review gates passed. Read .forge/prd.md, .forge/shared.md, and
+            the diff. Rewrite the PR body in this format:
+              ## What
+              ## Why
+              ## Architectural diff (vs shared.md)
+              ## Tests / contracts run
+              ## Risk callouts
+            High signal, no fluff. Use `gh pr edit` to update body.

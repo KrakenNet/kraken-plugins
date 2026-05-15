@@ -9,19 +9,20 @@ A Claude Code / Cursor plugin marketplace covering the Kraken Networks stack:
 | **fathom** | Author + operate Fathom CLIPS rule packs | 0.1.0 |
 | **nautilus** | Author + operate Nautilus data brokers | 0.1.0 |
 | **harbor** | Author Harbor orchestration graphs, skills, tools, markdown SKILL.md skills, directory plugins | 0.3.0 |
+| **forge** | 17-stage spec-anchored AI software pipeline w/ Ralph Loop, anti-cheat, spec GraphRAG, Reflexion lessons | 0.2.0 |
 
 ## Install (Claude Code)
 
 ```bash
 claude plugins marketplace add KrakenNet/kraken-plugins
-claude plugins install railyard kb fathom nautilus harbor
+claude plugins install railyard kb fathom nautilus harbor forge
 ```
 
 ## Install (Cursor)
 
 ```bash
 cursor plugins marketplace add KrakenNet/kraken-plugins
-cursor plugins install railyard kb fathom nautilus harbor
+cursor plugins install railyard kb fathom nautilus harbor forge
 ```
 
 ## Plugin entry points
@@ -33,6 +34,7 @@ After install, type `/help` in Claude Code or Cursor to see all slash commands. 
 - `/fathom:*` — Fathom rule pack authoring + ops
 - `/nautilus:*` — Nautilus broker authoring + ops
 - `/harbor:*` — Harbor graph authoring + light ops
+- `/forge:*` — Spec-anchored feature pipeline + Ralph Loop
 
 See each plugin's directory under `plugins/` for its README and command list.
 

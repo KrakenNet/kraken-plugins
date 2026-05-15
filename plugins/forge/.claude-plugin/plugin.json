@@ -1,0 +1,8 @@
+{
+  "name": "forge",
+  "version": "0.1.0",
+  "description": "Ultimate AI software team — 17-stage spec-anchored pipeline: dual interrogation (PM + design), parallel research, PRD, locked tests, adversarial Ralph Loop with anti-cheat gate, inter-stage review, CI/CD ensemble reviewers.",
+  "author": {"name": "sean"},
+  "license": "Apache-2.0",
+  "keywords": ["spec-driven", "tdd", "ralph-loop", "adversarial", "anti-cheat", "pipeline", "agents"]
+}

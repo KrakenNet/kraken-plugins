@@ -4,7 +4,7 @@
     "name": "kraken-networks"
   },
   "metadata": {
-    "description": "Kraken Networks plugin suite — railyard, kb, fathom, nautilus, harbor"
+    "description": "Kraken Networks plugin suite — railyard, kb, fathom, nautilus, harbor, forge"
   },
   "plugins": [
     {
@@ -51,6 +51,15 @@
       "source": "./plugins/harbor",
       "category": "development",
       "tags": ["harbor","graphs","skills","tools","triggers","provenance","authoring","orchestration","hitl","counterfactual","bosun","skill-md","dir-plugin"]
+    },
+    {
+      "name": "forge",
+      "description": "Ultimate AI software team — 17-stage spec-anchored pipeline with dual interrogation (PM + design), parallel research, locked tests, adversarial Ralph Loop, anti-cheat gate, inter-stage review, spec GraphRAG, Reflexion lessons, failure recipes, cheap-model triage, and Phase 3 CI/CD ensemble reviewers.",
+      "version": "0.2.0",
+      "author": {"name": "sean"},
+      "source": "./plugins/forge",
+      "category": "development",
+      "tags": ["spec-driven","tdd","ralph-loop","adversarial","anti-cheat","graphrag","reflexion","pipeline","agents","ci-cd"]
     }
   ]
 }
