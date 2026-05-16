@@ -22,14 +22,39 @@ Materialize the file plan from `shared.md` as empty interfaces + failing tests. 
    - Hit real interfaces (no mocks of internal code)
    - Assert behavior, not implementation
    - Fail with clear reason (not just "undefined")
-4. **Update anti-cheat allowlist** — add stub `NotImplementedError` markers to `.forge/anti-cheat.yaml` with reason `"scaffold-stage"` and an expiry: must be removed before final commit.
+4. **Emit `.forge/scaffolded-stubs.json`** — state-derived anti-cheat allowlist.
+   For every stub file generated, record path + SHA-256 of the file as written
+   + the dominant cheat pattern (`NOT_IMPLEMENTED`, `EMPTY_BODY`, etc.) + the
+   task id that owns it. The scanner allows hits on a path only while the
+   file's current SHA still matches; `ralph-coder` filling in the body
+   auto-expires the entry — no human bookkeeping. Schema:
+
+   ```json
+   {
+     "scaffolded_at": "2026-05-15T16:51:25Z",
+     "stubs": [
+       {
+         "path": "src/foo/bar.py",
+         "stub_sha256": "abc123...",
+         "pattern": "NOT_IMPLEMENTED",
+         "task": "T09-versions-manifest"
+       }
+     ]
+   }
+   ```
+
+   Do NOT add wildcard glob entries to `.forge/anti-cheat.yaml` for scaffold
+   stubs. Reserve `anti-cheat.yaml` for genuinely human-approved deferred
+   work (e.g. legitimately-empty fallback classes, Phase 3 deferrals). Such
+   entries should use `STRICT_OK:` prefix on `reason:` if they must survive
+   the strict CI gate.
 5. **Run tests** — confirm they all fail with expected reasons.
 
 ## Output
 
 - New files per `shared.md` file plan
 - `.forge/tests-locked.json` — list of test file paths + checksums (immutable after Stage 7)
-- Anti-cheat allowlist updated
+- `.forge/scaffolded-stubs.json` — SHA-keyed stub manifest (state-derived anti-cheat allowlist)
 
 ## Test quality rules
 

@@ -3,18 +3,38 @@
 Forge anti-cheat scanner.
 
 Modes:
-  fast  - PostToolUse hook; scans recently modified files; warns only.
-  full  - Ralph Loop gate; scans staged + unstaged + untracked; exits non-zero on block.
+  fast         - PostToolUse hook; scans recently modified files; warns only.
+  full         - Ralph Loop gate; scans staged + unstaged + untracked; exits non-zero on block.
+  stubs-state  - Reports scaffolded-stub allowlist health (counts) for /forge:status.
 
-Allowlist: .forge/anti-cheat.yaml with schema:
+Allowlist sources (checked in order):
 
-  allowlist:
-    - pattern: <tag>          # NOT_IMPLEMENTED, EMPTY_BODY, SKIPPED_TEST, HARDCODED_FAKE,
-                              # MOCK_IN_PROD, TODO_MARKER, MAGIC_OK
-      paths:                  # glob patterns; if omitted, allowlist applies everywhere
-        - "src/scaffold/**"
-      reason: "scaffold-stage stubs"
-      expires_at: "2026-05-21"   # optional ISO date; expired entries are ignored with warning
+  1. .forge/scaffolded-stubs.json (state-derived; written by skeleton-scaffolder)
+     {
+       "scaffolded_at": "ISO-8601",
+       "stubs": [
+         {"path": "...", "stub_sha256": "...", "pattern": "...", "task": "..."}
+       ]
+     }
+     A hit is allowed iff the file's current SHA-256 matches the recorded
+     stub_sha256 (i.e. file has not been modified since scaffold). Any change
+     to the file auto-expires its entry — no human action required.
+
+  2. .forge/anti-cheat.yaml (legacy human-managed):
+
+       allowlist:
+         - pattern: <tag>          # NOT_IMPLEMENTED, EMPTY_BODY, SKIPPED_TEST, HARDCODED_FAKE,
+                                   # MOCK_IN_PROD, TODO_MARKER, MAGIC_OK
+           paths:                  # glob patterns; if omitted, allowlist applies everywhere
+             - "src/scaffold/**"
+           reason: "scaffold-stage stubs"     # in strict mode, must start with "STRICT_OK:"
+           expires_at: "2026-05-21"           # ignored in strict mode
+
+Strict mode (--strict or FORGE_ANTI_CHEAT_STRICT=1):
+  - YAML allowlist entries are honored only if reason starts with "STRICT_OK:".
+  - expires_at is ignored.
+  - SHA-based entries from scaffolded-stubs.json still apply (state-justified).
+  - Auto no-op when .forge/prd.json reports any task passes:false (Phase 2 in flight).
 
 Prefers PyYAML; falls back to a hand-rolled parser tight to this schema if PyYAML missing.
 """
@@ -23,6 +43,8 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import fnmatch
+import hashlib
+import json
 import os
 import re
 import subprocess
@@ -81,7 +103,71 @@ def should_skip(path: str) -> bool:
 def is_test_file(path: str) -> bool:
     return bool(TEST_PATH_RE.search(path))
 
-# ---------- Allowlist ----------
+# ---------- Scaffolded-stub state ----------
+
+@dataclass
+class StubEntry:
+    path: str
+    stub_sha256: str
+    pattern: str = ""
+    task: str = ""
+
+def load_scaffolded_stubs(path: Path) -> dict[str, StubEntry]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[anti-cheat] failed to parse scaffolded-stubs.json: {e}", file=sys.stderr)
+        return {}
+    out: dict[str, StubEntry] = {}
+    for item in raw.get("stubs", []) or []:
+        if not isinstance(item, dict):
+            continue
+        p = item.get("path")
+        sha = item.get("stub_sha256")
+        if not p or not sha:
+            continue
+        out[str(p)] = StubEntry(
+            path=str(p),
+            stub_sha256=str(sha),
+            pattern=str(item.get("pattern", "")),
+            task=str(item.get("task", "")),
+        )
+    return out
+
+def file_sha256(path: Path) -> str | None:
+    try:
+        h = hashlib.sha256()
+        with path.open("rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+@dataclass
+class StubsState:
+    total: int = 0
+    still_stub: list[str] = field(default_factory=list)
+    filled_in: list[str] = field(default_factory=list)
+    stale: list[str] = field(default_factory=list)   # path recorded but file missing
+
+def compute_stubs_state(stubs: dict[str, StubEntry]) -> StubsState:
+    s = StubsState(total=len(stubs))
+    for path, entry in stubs.items():
+        p = Path(path)
+        if not p.exists():
+            s.stale.append(path)
+            continue
+        cur = file_sha256(p)
+        if cur == entry.stub_sha256:
+            s.still_stub.append(path)
+        else:
+            s.filled_in.append(path)
+    return s
+
+# ---------- YAML allowlist (legacy) ----------
 
 @dataclass
 class AllowEntry:
@@ -90,10 +176,13 @@ class AllowEntry:
     reason: str = ""
     expires_at: dt.date | None = None
 
-    def applies(self, tag: str, path: str) -> bool:
+    def applies(self, tag: str, path: str, *, strict: bool = False) -> bool:
         if self.pattern != tag:
             return False
-        if self.expires_at and dt.date.today() > self.expires_at:
+        if strict:
+            if not self.reason.startswith("STRICT_OK:"):
+                return False
+        elif self.expires_at and dt.date.today() > self.expires_at:
             return False
         if not self.paths:
             return True
@@ -180,6 +269,21 @@ def _strip_quotes(s: str) -> str:
         return s[1:-1]
     return s
 
+# ---------- Strict-mode degrade check ----------
+
+def phase2_in_progress(prd_json: Path) -> bool:
+    """Return True if any task in prd.json has passes:false."""
+    if not prd_json.exists():
+        return False
+    try:
+        raw = json.loads(prd_json.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    for t in raw.get("tasks", []) or []:
+        if isinstance(t, dict) and t.get("passes") is False:
+            return True
+    return False
+
 # ---------- Scan ----------
 
 @dataclass
@@ -190,8 +294,41 @@ class Hit:
     severity: str
     excerpt: str
 
-def scan_file(path: Path, allowlist: list[AllowEntry]) -> list[Hit]:
+# Per-process SHA cache: avoid hashing a file once per hit.
+_sha_cache: dict[str, str | None] = {}
+
+def _cached_sha(path: str) -> str | None:
+    if path not in _sha_cache:
+        _sha_cache[path] = file_sha256(Path(path))
+    return _sha_cache[path]
+
+def hit_is_allowed(
+    rel: str,
+    tag: str,
+    *,
+    stubs: dict[str, StubEntry],
+    allowlist: list[AllowEntry],
+    strict: bool,
+) -> bool:
+    # 1. SHA-based stub allowlist (state-justified, valid in strict + lenient).
+    entry = stubs.get(rel)
+    if entry is not None:
+        cur = _cached_sha(rel)
+        if cur is not None and cur == entry.stub_sha256:
+            return True
+        # SHA mismatch -> auto-expired; fall through.
+    # 2. Legacy YAML allowlist.
+    return any(a.applies(tag, rel, strict=strict) for a in allowlist)
+
+def scan_file(
+    path: Path,
+    allowlist: list[AllowEntry],
+    *,
+    stubs: dict[str, StubEntry] | None = None,
+    strict: bool = False,
+) -> list[Hit]:
     rel = str(path)
+    stubs = stubs or {}
     if should_skip(rel):
         return []
     try:
@@ -209,7 +346,7 @@ def scan_file(path: Path, allowlist: list[AllowEntry]) -> list[Hit]:
                 continue
             if not p.regex.search(line):
                 continue
-            if any(a.applies(p.tag, rel) for a in allowlist):
+            if hit_is_allowed(rel, p.tag, stubs=stubs, allowlist=allowlist, strict=strict):
                 continue
             hits.append(Hit(rel, lineno, p.tag, p.severity, line.strip()[:200]))
     return hits
@@ -246,14 +383,46 @@ def git_changed_files() -> list[Path]:
     except FileNotFoundError:
         return []
 
+# ---------- Stubs-state report ----------
+
+def print_stubs_state() -> int:
+    stubs = load_scaffolded_stubs(Path(".forge/scaffolded-stubs.json"))
+    if not stubs:
+        print("  scaffolded stubs:   (no scaffolded-stubs.json)")
+        return 0
+    s = compute_stubs_state(stubs)
+    print(f"  scaffolded stubs:   {s.total} total")
+    print(f"    still stub:       {len(s.still_stub)}")
+    print(f"    filled in:        {len(s.filled_in)}")
+    print(f"    stale (missing):  {len(s.stale)}")
+    if s.still_stub:
+        sample = ", ".join(s.still_stub[:3])
+        more = f" (+{len(s.still_stub)-3} more)" if len(s.still_stub) > 3 else ""
+        print(f"    pending:          {sample}{more}")
+    return 0
+
 # ---------- Entry ----------
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["fast", "full"])
+    ap.add_argument("mode", choices=["fast", "full", "stubs-state"])
+    ap.add_argument("--strict", action="store_true",
+                    help="ignore expires_at; require STRICT_OK: prefix on YAML entries.")
     args = ap.parse_args()
 
+    if args.mode == "stubs-state":
+        return print_stubs_state()
+
+    strict = args.strict or os.environ.get("FORGE_ANTI_CHEAT_STRICT") == "1"
+
+    # Degrade strict to lenient while Phase 2 is in flight.
+    if strict and phase2_in_progress(Path(".forge/prd.json")):
+        print("[anti-cheat] strict mode requested but Phase 2 in flight "
+              "(prd.json has passes:false tasks); running lenient.", file=sys.stderr)
+        strict = False
+
     allowlist = load_allowlist(Path(".forge/anti-cheat.yaml"))
+    stubs = load_scaffolded_stubs(Path(".forge/scaffolded-stubs.json"))
 
     if args.mode == "fast":
         files = recent_files(minutes=5)
@@ -266,23 +435,24 @@ def main() -> int:
     blocked = 0
     warned = 0
     for f in files:
-        for h in scan_file(f, allowlist):
+        for h in scan_file(f, allowlist, stubs=stubs, strict=strict):
             print(f"[anti-cheat:{h.severity}] {h.path}:{h.line} [{h.tag}] {h.excerpt}", file=sys.stderr)
             if h.severity == "block":
                 blocked += 1
             else:
                 warned += 1
 
+    tag = "strict" if strict else "lenient"
     if args.mode == "fast":
         if blocked or warned:
-            print(f"[anti-cheat] {blocked} blocks, {warned} warnings (fast pass, non-blocking)", file=sys.stderr)
+            print(f"[anti-cheat:{tag}] {blocked} blocks, {warned} warnings (fast pass, non-blocking)", file=sys.stderr)
         return 0
 
     if blocked:
-        print(f"[anti-cheat] BLOCKED: {blocked} block-severity hits ({warned} warnings)", file=sys.stderr)
+        print(f"[anti-cheat:{tag}] BLOCKED: {blocked} block-severity hits ({warned} warnings)", file=sys.stderr)
         return 1
     if warned:
-        print(f"[anti-cheat] OK: 0 blocks, {warned} warnings", file=sys.stderr)
+        print(f"[anti-cheat:{tag}] OK: 0 blocks, {warned} warnings", file=sys.stderr)
     return 0
 
 if __name__ == "__main__":
