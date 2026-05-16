@@ -38,6 +38,20 @@ if [ -d .forge/reviews ]; then
   ls -1 .forge/reviews/ 2>/dev/null | sed 's/^/  /'
 fi
 
+if [ -f .forge/scaffolded-stubs.json ] || [ -f .forge/anti-cheat.yaml ]; then
+  echo ""
+  echo "=== Anti-cheat state ==="
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/anti_cheat_scan.py" stubs-state 2>/dev/null
+  # Dual-mode preview: what would lenient vs strict report on current changes?
+  if [ -f .forge/prd.json ]; then
+    bash "${CLAUDE_PLUGIN_ROOT}/scripts/anti-cheat-scan.sh" full >/dev/null 2>&1
+    lenient_state=$([ $? -eq 0 ] && echo pass || echo fail)
+    bash "${CLAUDE_PLUGIN_ROOT}/scripts/anti-cheat-scan.sh" full --strict >/dev/null 2>&1
+    strict_state=$([ $? -eq 0 ] && echo pass || echo fail)
+    printf "  gate preview:       lenient=%s  strict=%s\n" "$lenient_state" "$strict_state"
+  fi
+fi
+
 if [ -f .forge/blockers.md ]; then
   echo ""
   echo "=== BLOCKERS ==="

@@ -11,16 +11,21 @@ permissions:
 
 jobs:
   anti-cheat:
-    name: Anti-Cheat Final Sweep
+    name: Anti-Cheat Final Sweep (strict)
     runs-on: ubuntu-latest
+    env:
+      FORGE_ANTI_CHEAT_STRICT: "1"
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Run anti-cheat full pass
+      - name: Run anti-cheat full pass --strict
         run: |
+          # Strict mode: expires_at ignored; only STRICT_OK:-prefixed YAML entries honored.
+          # SHA-keyed entries in .forge/scaffolded-stubs.json still apply (state-justified).
+          # If any prd.json task still has passes:false, scanner auto-degrades to lenient.
           if [ -f .forge/scripts/anti-cheat-scan.sh ]; then
-            bash .forge/scripts/anti-cheat-scan.sh full
+            bash .forge/scripts/anti-cheat-scan.sh full --strict
           else
             echo "anti-cheat script not vendored; relying on plugin install"
           fi

@@ -101,7 +101,10 @@ is obviously wrong.
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/anti-cheat-scan.sh" full
    ```
-   Non-zero → fix code (don't auto-add allowlist).
+   Non-zero → fix code (don't auto-add allowlist). The SHA-keyed
+   `.forge/scaffolded-stubs.json` auto-expires a stub's allowlist entry the
+   moment you change the file, so filling in the body is sufficient — never
+   touch `.forge/anti-cheat.yaml` to silence a hit on your own changes.
 3. **Test gate**
    - Task's covered_tests first
    - Then full locked suite (regression)

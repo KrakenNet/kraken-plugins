@@ -64,7 +64,8 @@ Phase 3 ENVIRONMENT    (CI/CD, installed via /forge:init-ci)
 │   ├── 02-research.md
 │   ├── 03-prd.md
 │   └── 04-design.md
-├── anti-cheat.yaml       (allowlist)
+├── scaffolded-stubs.json (skeleton-scaffolder; SHA-keyed stub allowlist — auto-expires on edit)
+├── anti-cheat.yaml       (legacy human-managed allowlist; STRICT_OK: prefix bypasses --strict)
 └── blockers.md           (Ralph stuck state)
 ```
 
@@ -105,6 +106,27 @@ See `${CLAUDE_PLUGIN_ROOT}/templates/prd.schema.json`.
 ## Anti-cheat patterns
 
 See `agents/anti-cheat.md`. Block-severity: NotImplementedError, vacuous returns in prod paths, skipped tests, mock-in-prod imports, hardcoded fake env values.
+
+### Allowlist layering
+
+Two sources, checked in order:
+
+1. **`.forge/scaffolded-stubs.json`** — state-derived. Written once by
+   `skeleton-scaffolder` with `{path, stub_sha256, pattern, task}` per stub.
+   A hit is allowed iff the file's current SHA-256 still matches
+   `stub_sha256`. Editing the file (filling in the body) auto-expires the
+   entry — no human bookkeeping. Replaces wildcard glob allowlists.
+2. **`.forge/anti-cheat.yaml`** — legacy human-managed. Reserved for
+   genuinely deferred work (e.g. fallback classes, Phase 3 stubs). Honors
+   `expires_at`. In **strict** mode (CI / PR gate), `expires_at` is ignored
+   and only entries whose `reason:` begins with `STRICT_OK:` are honored.
+
+Strict mode (`--strict` / `FORGE_ANTI_CHEAT_STRICT=1`) auto-degrades to
+lenient if `.forge/prd.json` reports any task `passes:false` (Phase 2 in
+flight). Local Ralph Loop + PostToolUse hook run lenient; CI runs strict.
+
+Diagnostic: `bash scripts/anti-cheat-scan.sh stubs-state` prints stub
+health counts; `/forge:status` includes this in its dashboard.
 
 ## Phase 3 = GitHub Actions
 
