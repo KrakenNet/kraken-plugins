@@ -105,6 +105,18 @@ is obviously wrong.
    `.forge/scaffolded-stubs.json` auto-expires a stub's allowlist entry the
    moment you change the file, so filling in the body is sufficient — never
    touch `.forge/anti-cheat.yaml` to silence a hit on your own changes.
+2.5. **Architecture-fitness gate**
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/architecture-scan.sh" full
+   ```
+   Sister gate to anti-cheat. Blocks god objects (file LOC, function LOC,
+   class method count) and shotgun surgery (fan-in per symbol).
+   Differential against `.forge/baseline-metrics.json` if present — legacy
+   carry-over warns, regressions block.
+   On block: split the file/function or add
+   `# forge: architecture-exempt reason="..."` with justification (logged to
+   `.forge/architecture-exemptions.jsonl`). Strict-mode CI requires
+   `reason="STRICT_OK: ..."`. Never auto-add overrides.
 3. **Test gate**
    - Task's covered_tests first
    - Then full locked suite (regression)
@@ -127,7 +139,7 @@ Tests: <test names>"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/forge_graph.py" record-outcome \
   --task-id "<id>" --status passed \
   --files "<comma list>" \
-  --gates "static:pass,anti-cheat:pass,test:pass,adversarial:pass"
+  --gates "static:pass,anti-cheat:pass,arch:pass,test:pass,adversarial:pass"
 ```
 
 ### F. On fail

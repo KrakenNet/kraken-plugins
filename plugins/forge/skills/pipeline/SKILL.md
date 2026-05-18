@@ -27,6 +27,7 @@ Phase 2 PROCESS        (local execution, how to build)
         ralph-coder
           -> static gate
           -> anti-cheat gate
+          -> architecture-fitness gate
           -> test gate
           -> adversarial sandbox
         (loop until prd.json all passes:true)
@@ -66,6 +67,9 @@ Phase 3 ENVIRONMENT    (CI/CD, installed via /forge:init-ci)
 │   └── 04-design.md
 ├── scaffolded-stubs.json (skeleton-scaffolder; SHA-keyed stub allowlist — auto-expires on edit)
 ├── anti-cheat.yaml       (legacy human-managed allowlist; STRICT_OK: prefix bypasses --strict)
+├── architecture.yaml     (optional; thresholds for file_loc, function_loc, class_methods, fan_in)
+├── baseline-metrics.json (blast-radius-mapper or manual; per-file pre-change metrics for differential gate)
+├── architecture-exemptions.jsonl (append-only audit log of honored override comments)
 └── blockers.md           (Ralph stuck state)
 ```
 
@@ -86,6 +90,7 @@ Phase 3 ENVIRONMENT    (CI/CD, installed via /forge:init-ci)
 | task-sequencer | 2 | 9 | /forge:scaffold |
 | ralph-coder | 2 | 10 | /forge:resume, self-invoking |
 | anti-cheat | 2 | gate | PostToolUse hook + Ralph gate + PR check |
+| architecture-reviewer | 2 | gate 2.5 | PostToolUse hook + Ralph gate + PR check |
 | code-simplifier | 2 | 11 | post Ralph Loop all-green |
 
 ## Gate contracts (Ralph Loop)
@@ -94,10 +99,11 @@ Order matters. Each gate has fail-fast semantics.
 
 1. **Static gate** — empty diff fails. Project lint cmd must pass.
 2. **Anti-cheat gate** — `scripts/anti-cheat-scan.sh full`. Exit non-zero on block-severity.
+2.5. **Architecture-fitness gate** — `scripts/architecture-scan.sh full`. Blocks god objects, oversized functions, and high fan-in. Differential against `.forge/baseline-metrics.json` when present. Override via `# forge: architecture-exempt reason="..."` comment (logged to `.forge/architecture-exemptions.jsonl`). Strict mode requires `STRICT_OK:` prefix on override reason.
 3. **Test gate** — task's `covers_tests` first, then full locked suite (regression).
 4. **Adversarial sandbox** — runs `.forge/contracts/*` against built/served artifact.
 
-All four must pass → mark task `passes:true`, atomic commit.
+All five must pass → mark task `passes:true`, atomic commit.
 
 ## prd.json schema
 
@@ -106,6 +112,38 @@ See `${CLAUDE_PLUGIN_ROOT}/templates/prd.schema.json`.
 ## Anti-cheat patterns
 
 See `agents/anti-cheat.md`. Block-severity: NotImplementedError, vacuous returns in prod paths, skipped tests, mock-in-prod imports, hardcoded fake env values.
+
+## Architecture-fitness patterns
+
+See `agents/architecture-reviewer.md`. Block-severity: file LOC > threshold,
+function LOC > threshold, class method count > threshold, fan-in (caller file
+count) per symbol > threshold. Defaults in
+`scripts/architecture_scan.py`; override per repo via `.forge/architecture.yaml`.
+
+### Differential rule (refactor mode)
+
+When `.forge/baseline-metrics.json` exists (captured by `blast-radius-mapper`
+on refactor entry, or manually via `architecture-scan.sh baseline`):
+
+- Was under, is over → BLOCK (regression).
+- Was over, got worse → BLOCK (can't make bad worse).
+- Was over, unchanged → WARN (legacy carry-over).
+- Was over, improved → PASS.
+
+This lets the gate fire on existing codebases without rejecting every legacy
+god object on day 1.
+
+### Override discipline
+
+Mirrors anti-cheat's `STRICT_OK:` prefix pattern. Comment in file:
+
+```
+# forge: architecture-exempt reason="legacy auth shim — extraction tracked in T15"
+```
+
+Strict mode (CI) only honors `reason="STRICT_OK: ..."`. Every honored
+override appends a JSONL entry to `.forge/architecture-exemptions.jsonl`.
+Never auto-add overrides.
 
 ### Allowlist layering
 
@@ -189,7 +227,7 @@ Per-agent `model:` frontmatter. Routing:
 
 | Model | Agents | Why |
 |---|---|---|
-| haiku | general-reviewer, anti-cheat, task-sequencer, blast-radius-mapper, lessons-keeper | classification, routing, mechanical extraction |
+| haiku | general-reviewer, anti-cheat, architecture-reviewer, task-sequencer, blast-radius-mapper, lessons-keeper | classification, routing, mechanical extraction |
 | sonnet (default) | ralph-coder, code-simplifier, contract-generator, skeleton-scaffolder, prd-writer, technical-designer, pm-interrogator, design-interrogator, context-researcher, pattern-researcher | code generation, design decisions, interview tact |
 | opus | (none by default) | reserve for technical-designer on hard architectural calls if needed |
 

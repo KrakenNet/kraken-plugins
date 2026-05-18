@@ -30,6 +30,26 @@ jobs:
             echo "anti-cheat script not vendored; relying on plugin install"
           fi
 
+  arch-fitness:
+    name: Architecture Fitness Gate (strict)
+    runs-on: ubuntu-latest
+    env:
+      FORGE_ARCH_STRICT: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run architecture-scan full pass --strict
+        run: |
+          # Strict mode: override comments must use reason="STRICT_OK: ..." prefix.
+          # Differential gate uses .forge/baseline-metrics.json when present.
+          # If any prd.json task still has passes:false, scanner auto-degrades to lenient.
+          if [ -f .forge/scripts/architecture-scan.sh ]; then
+            bash .forge/scripts/architecture-scan.sh full --strict
+          else
+            echo "architecture script not vendored; relying on plugin install"
+          fi
+
   security-review:
     name: Security Review (OWASP)
     runs-on: ubuntu-latest
@@ -80,7 +100,7 @@ jobs:
   e2e-gauntlet:
     name: E2E Adversarial Gauntlet
     runs-on: ubuntu-latest
-    needs: [security-review, perf-review, arch-review]
+    needs: [arch-fitness, security-review, perf-review, arch-review]
     steps:
       - uses: actions/checkout@v4
       - name: Spin up staging container
@@ -111,7 +131,7 @@ jobs:
   ci-autofixer:
     name: CI Auto-Fixer
     if: failure()
-    needs: [anti-cheat, security-review, perf-review, arch-review, e2e-gauntlet]
+    needs: [anti-cheat, arch-fitness, security-review, perf-review, arch-review, e2e-gauntlet]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

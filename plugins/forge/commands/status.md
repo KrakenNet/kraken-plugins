@@ -52,6 +52,21 @@ if [ -f .forge/scaffolded-stubs.json ] || [ -f .forge/anti-cheat.yaml ]; then
   fi
 fi
 
+echo ""
+echo "=== Architecture-fitness state ==="
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/architecture_scan.py" state 2>/dev/null
+if [ -f .forge/prd.json ]; then
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/architecture-scan.sh" full >/dev/null 2>&1
+  arch_lenient=$([ $? -eq 0 ] && echo pass || echo fail)
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/architecture-scan.sh" full --strict >/dev/null 2>&1
+  arch_strict=$([ $? -eq 0 ] && echo pass || echo fail)
+  printf "  gate preview:       lenient=%s  strict=%s\n" "$arch_lenient" "$arch_strict"
+fi
+if [ -f .forge/architecture-exemptions.jsonl ]; then
+  n=$(wc -l < .forge/architecture-exemptions.jsonl)
+  printf "  exemptions logged:  %s\n" "$n"
+fi
+
 if [ -f .forge/blockers.md ]; then
   echo ""
   echo "=== BLOCKERS ==="
