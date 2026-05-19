@@ -60,6 +60,15 @@
       "source": "./plugins/forge",
       "category": "development",
       "tags": ["spec-driven","tdd","ralph-loop","adversarial","anti-cheat","graphrag","reflexion","pipeline","agents","ci-cd"]
+    },
+    {
+      "name": "ui-fidelity",
+      "description": "Multi-gate UI audit for React/Vite/Playwright projects — catches dead buttons, orphan routes, flow-continuity breaks, intent-contract violations, contrast bugs, offscreen toasts, and persona-journey gaps. Includes LLM-as-critic UX pass for label/behavior mismatches and off-persona CTAs that lint and tests will never find.",
+      "version": "0.1.0",
+      "author": {"name": "sean"},
+      "source": "./plugins/ui-fidelity",
+      "category": "development",
+      "tags": ["ui","audit","playwright","react","ux","fidelity","dead-button","intent","persona-journey","axe","a11y","llm-critic"]
     }
   ]
 }

@@ -1,0 +1,33 @@
+// tests/persona/{{PERSONA}}.spec.ts
+// Persona journey: narrative end-to-end test for the {{PERSONA}}.
+// This spec is the contract. If it fails, the UI is broken — fix the UI, not the spec.
+import { test, expect } from '@playwright/test';
+
+test.describe('{{PERSONA}} journey', () => {
+  test('completes primary goal: {{PRIMARY_GOAL}}', async ({ page }) => {
+    // 1. Land on persona home
+    await page.goto('/{{LANDING_PATH}}');
+    await expect(page.locator('h1')).toContainText('{{LANDING_HEADING}}');
+
+    // 2. Perform primary action (replace with the actual flow)
+    await page.locator('textarea, input[type=text]').first().fill('{{SAMPLE_PROMPT}}');
+    await page.getByRole('button', { name: '{{CTA_LABEL}}' }).click();
+
+    // 3. Land on the expected next surface and assert the prompt flowed through
+    await expect(page).toHaveURL(/{{EXPECTED_URL_PATTERN}}/);
+    await expect(page.getByText('{{SAMPLE_PROMPT}}')).toBeVisible();
+
+    // 4. Complete the persona's secondary checkpoint (optional)
+    //    e.g. assert a save, a navigation, or a status indicator
+  });
+
+  test('no console errors during journey', async ({ page }) => {
+    const errs: string[] = [];
+    page.on('pageerror', (e) => errs.push(String(e)));
+    page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
+
+    await page.goto('/{{LANDING_PATH}}');
+    // walk a short happy path
+    expect(errs, errs.join('\n')).toHaveLength(0);
+  });
+});

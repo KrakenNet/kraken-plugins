@@ -55,12 +55,27 @@ Write `.forge/blast-radius.json`:
 
 Write `.forge/blast-radius-full.txt` with the uncapped list for reference.
 
+## Architecture baseline capture
+
+After writing `blast-radius.json`, snapshot per-file metrics so the
+architecture-fitness gate can run differentially during the refactor:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/architecture-scan.sh" baseline
+```
+
+This writes `.forge/baseline-metrics.json` containing `file_loc`,
+`max_function_loc`, `max_class_methods` per tracked file. The
+architecture-reviewer gate uses this baseline so legacy god objects warn
+instead of blocking, while regressions and "made bad worse" still hard-fail.
+
 ## Downstream effect
 
 `/forge:new --fix` workflow uses `blast-radius.json` to:
 - Restrict context-researcher and pattern-researcher to listed files
 - Prefill prd-writer scope section with `files`
 - Skip dual interrogation (single brief AskUserQuestion: "fix description correct? out-of-scope warning ok?")
+- Differential architecture gate runs against `baseline-metrics.json` (captured above)
 
 ## Report
 

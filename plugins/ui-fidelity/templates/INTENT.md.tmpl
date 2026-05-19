@@ -1,0 +1,30 @@
+# INTENT — {{ROUTE}}
+
+```yaml
+route: {{ROUTE}}
+persona: {{PERSONA}}   # one of: developer | reviewer | auditor | admin | plugin-dev | tenant-admin | guest
+
+# What the persona is here to do. One sentence. Time-bounded if possible.
+primary-goal: {{GOAL}}
+
+# THE single most important action on this page. Audit asserts its handler matches `target`.
+primary-cta:
+  label: {{CTA_LABEL}}          # exact visible text, or aria-label
+  target: {{CTA_TARGET}}        # navigate(/path) | open-drawer(name) | submit(/v1/endpoint) | external(https://...)
+
+# Optional supporting actions. Each should ladder back to primary-goal.
+secondary-ctas: []
+#   - { label: "Recent graphs", target: "navigate(/library?owner=me)" }
+
+# Components that MUST NOT appear on this surface (would confuse persona or
+# duplicate functionality that belongs elsewhere). Audit fails if imported.
+prohibited: []
+#   - MarketplaceBrowse     # belongs on /marketplace, not on persona home
+#   - ChatPanelAsPrimary    # chat already lives in the shell
+```
+
+## Notes
+
+Free-form rationale for the choices above. Anything subtle a reviewer should know.
+- {{NOTE_1}}
+- {{NOTE_2}}
