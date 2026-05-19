@@ -1,0 +1,8 @@
+{
+  "name": "ui-fidelity",
+  "version": "0.1.0",
+  "description": "Multi-gate UI audit for React/Vite/Playwright projects. Catches dead buttons, orphan routes, flow-continuity breaks, intent-contract violations, contrast bugs, and persona-journey gaps. Includes LLM-as-critic UX pass.",
+  "author": {"name": "sean"},
+  "license": "Apache-2.0",
+  "keywords": ["ui", "audit", "playwright", "react", "ux", "fidelity", "dead-button", "intent", "persona-journey", "axe", "a11y"]
+}
