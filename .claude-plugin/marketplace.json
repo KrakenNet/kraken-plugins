@@ -4,7 +4,7 @@
     "name": "kraken-networks"
   },
   "metadata": {
-    "description": "Kraken Networks plugin suite — railyard, kb, fathom, nautilus, harbor, forge"
+    "description": "Kraken Networks plugin suite — railyard, kb, fathom, nautilus, stargraph, forge"
   },
   "plugins": [
     {
@@ -18,12 +18,12 @@
     },
     {
       "name": "kb",
-      "description": "Kraken Knowledge Base lifecycle management — works with railyard, fathom, nautilus, harbor. Create, update, audit, lint, and manage KB articles with automatic staleness detection and KB-first development enforcement.",
+      "description": "Kraken Knowledge Base lifecycle management — works with railyard, fathom, nautilus, stargraph. Create, update, audit, lint, and manage KB articles with automatic staleness detection and KB-first development enforcement.",
       "version": "0.3.0",
       "author": {"name": "kraken-networks"},
       "source": "./plugins/kraken-kb",
       "category": "development",
-      "tags": ["knowledge-base","documentation","enforcement","audit","lint","railyard","fathom","nautilus","harbor"]
+      "tags": ["knowledge-base","documentation","enforcement","audit","lint","railyard","fathom","nautilus","stargraph"]
     },
     {
       "name": "fathom",
@@ -44,13 +44,13 @@
       "tags": ["nautilus","data-broker","adapters","attestation","authoring","operations","cost-caps"]
     },
     {
-      "name": "harbor",
-      "description": "Author + operate Harbor — graphs, skills, nodes, tools, triggers, Bosun rule packs, markdown SKILL.md skills, directory-based plugins; run/replay/counterfactual against harbor serve, drive HITL, inspect checkpoints.",
+      "name": "stargraph",
+      "description": "Author + operate Stargraph — graphs, skills, nodes, tools, triggers, Bosun rule packs, markdown SKILL.md skills, directory-based plugins; run/replay/counterfactual against stargraph serve, drive HITL, inspect checkpoints.",
       "version": "0.3.0",
       "author": {"name": "kraken-networks"},
-      "source": "./plugins/harbor",
+      "source": "./plugins/stargraph",
       "category": "development",
-      "tags": ["harbor","graphs","skills","tools","triggers","provenance","authoring","orchestration","hitl","counterfactual","bosun","skill-md","dir-plugin"]
+      "tags": ["stargraph","graphs","skills","tools","triggers","provenance","authoring","orchestration","hitl","counterfactual","bosun","skill-md","dir-plugin"]
     },
     {
       "name": "forge",

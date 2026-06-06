@@ -14,7 +14,7 @@ Received via Task delegation.
 
 ## Inputs
 
-- `project_name` — one of `railyard`, `fathom`, `nautilus`, `harbor` (also accepts ad-hoc names; falls back to language-based profile)
+- `project_name` — one of `railyard`, `fathom`, `nautilus`, `stargraph` (also accepts ad-hoc names; falls back to language-based profile)
 - `project_root` — absolute path to the target project's repo
 - `kb_dir` — relative directory under `project_root` for the KB (default: `docs/`)
 - `index_template` — string template for `_index.md`; defaults to the Railyard `_index.md` shape
@@ -30,7 +30,7 @@ When bootstrapping a KB, choose scan rules based on `project_name`:
 | railyard | `internal/`, `cmd/`, `web-*-ui/src/pages/`, `supabase/volumes/db/init/` |
 | fathom | `src/fathom/`, `rule-packs/`, `tests/` |
 | nautilus | `src/nautilus/`, `tests/`, plus root `nautilus.yaml` |
-| harbor | `src/harbor/`, `design-docs/`, `specs/`, `tests/` |
+| stargraph | `src/stargraph/`, `design-docs/`, `specs/`, `tests/` |
 | (fallback Python) | `src/` (or detected `<package>/`), `tests/` |
 | (fallback Go) | `internal/`, `cmd/` |
 </input>

@@ -6,7 +6,7 @@ CANONICAL="$ROOT/plugins/fathom/skills/smart-kraken/SKILL.md"
 [ -f "$CANONICAL" ] || { echo "missing canonical: $CANONICAL"; exit 1; }
 CANON_HASH=$(sha256sum "$CANONICAL" | awk '{print $1}')
 EXIT=0
-for plugin in fathom nautilus harbor; do
+for plugin in fathom nautilus stargraph; do
   COPY="$ROOT/plugins/$plugin/skills/smart-kraken/SKILL.md"
   if [ ! -f "$COPY" ]; then
     # Only enforce for plugins that ship smart-kraken; skip if missing.

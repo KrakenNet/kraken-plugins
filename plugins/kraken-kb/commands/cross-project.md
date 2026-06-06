@@ -1,6 +1,6 @@
 ---
-description: Bootstrap a Railyard-style KB inside a Kraken sibling project (fathom, nautilus, or harbor) using the same conventions
-argument-hint: [fathom|nautilus|harbor|--auto-detect]
+description: Bootstrap a Railyard-style KB inside a Kraken sibling project (fathom, nautilus, or stargraph) using the same conventions
+argument-hint: [fathom|nautilus|stargraph|--auto-detect]
 allowed-tools: [Bash, Read, Write, AskUserQuestion, Task]
 ---
 
@@ -15,8 +15,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/kb-conventions/SKILL.md`.
 ## Resolve Target
 
 From `$ARGUMENTS`:
-- If a project name is given (`fathom`, `nautilus`, `harbor`), use it.
-- If `--auto-detect`, read `pyproject.toml` in PWD: name `fathom-rules` → fathom; `nautilus-rkm` → nautilus; `harbor` → harbor.
+- If a project name is given (`fathom`, `nautilus`, `stargraph`), use it.
+- If `--auto-detect`, read `pyproject.toml` in PWD: name `fathom-rules` → fathom; `nautilus-rkm` → nautilus; `stargraph` → stargraph.
 - Otherwise, prompt with AskUserQuestion: which project?
 
 Resolve the absolute path to the project's repo (under `/home/sean/leagues/<project>/` if monorepo-aware, else PWD).

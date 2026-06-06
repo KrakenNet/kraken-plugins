@@ -1,6 +1,6 @@
 ---
 name: smart-kraken
-description: Shared cross-project skill for Kraken Networks plugins — detect monorepo, project paths, conventions; surface verify-before-call discipline. Duplicated across fathom, nautilus, harbor.
+description: Shared cross-project skill for Kraken Networks plugins — detect monorepo, project paths, conventions; surface verify-before-call discipline. Duplicated across fathom, nautilus, stargraph.
 version: 1.0.0
 user-invocable: false
 ---
@@ -19,7 +19,7 @@ esac
 If `MONOREPO=1`, the following paths are canonical:
 - `fathom/` — Fathom Python project (rule packs at `rule-packs/`)
 - `nautilus/` — Nautilus Python project (config at `nautilus.yaml`)
-- `harbor/` — Harbor Python project (graphs at `graphs/` once shipped)
+- `stargraph/` — Stargraph Python project (graphs at `graphs/` once shipped)
 - `bosun/` — Bosun (governance rule packs)
 - `railyard/railyard/` — Railyard Go service
 - `kraken-plugins/` — this repo
@@ -30,7 +30,7 @@ If `MONOREPO=1`, the following paths are canonical:
 
 - `pyproject.toml` `name = "fathom-rules"` → fathom
 - `pyproject.toml` `name = "nautilus-rkm"` → nautilus
-- `pyproject.toml` `name = "harbor"` → harbor
+- `pyproject.toml` `name = "stargraph"` → stargraph
 - `go.mod` with `module github.com/KrakenNet/railyard` → railyard
 
 ## Cross-project Conventions
