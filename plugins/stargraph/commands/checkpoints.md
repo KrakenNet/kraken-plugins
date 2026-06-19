@@ -1,10 +1,14 @@
 ---
-description: List checkpoints for a Stargraph run with state + facts diff
-argument-hint: <run_id>
+description: Inspect a Stargraph run's checkpoints — timeline, state at step, CLIPS fact diff
+argument-hint: <run_id> --db <path> [--step <n>] [--diff <n> <m>]
 allowed-tools: [Bash, Read]
 ---
 
 # Stargraph Checkpoints
+
+There is no `checkpoints` subcommand or endpoint. Checkpoint, state, and fact
+views come from `stargraph inspect` over the SQLite checkpointer DB (default
+`./.stargraph/run.sqlite`).
 
 ## Load Foundation
 
@@ -13,9 +17,20 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/smart-stargraph/SKILL.md`.
 ## Run
 
 ```bash
-curl -s "${STARGRAPH_URL}/v1/runs/<run_id>/checkpoints" -H "Authorization: Bearer ${STARGRAPH_TOKEN}" | jq '.data[] | {id, node, state_diff_summary, fact_count}'
+RID="$1"
+DB="${DB:-./.stargraph/run.sqlite}"
+
+# Timeline — per-step checkpoint sequence for the run
+uv run stargraph inspect "${RID}" --db "${DB}"
+
+# State captured at a specific checkpoint step
+uv run stargraph inspect "${RID}" --db "${DB}" --step "${STEP}"
+
+# CLIPS fact delta between two checkpoint steps
+uv run stargraph inspect "${RID}" --db "${DB}" --diff "${N}" "${M}"
 ```
 
 ## Report
 
-Table of checkpoints with timestamps + state-diff summary.
+Table of checkpoint steps from the timeline, with the state snapshot at a given
+`--step` and the CLIPS fact delta (added/removed) from `--diff N M`.

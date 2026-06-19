@@ -1,14 +1,14 @@
 ---
-description: Dry-run a Stargraph graph in a sandboxed engine — no side-effecting tools, deterministic stubs
-argument-hint: <graph> [--input-file <json>] [--seed <int>] [--max-steps <n>]
+description: Offline rule-firing trace for a Stargraph graph against synthetic fixtures — no tools/LLM/checkpoint
+argument-hint: <graph> --fixtures <file>
 allowed-tools: [Bash, Read, AskUserQuestion]
 ---
 
 # Stargraph Simulate
 
-Execute a graph end-to-end with all `side-effects ≠ none` tool calls swapped
-for deterministic stubs. Use to smoke-test routing rules and Bosun packs
-without touching real systems.
+Validate a graph's rule logic against caller-supplied synthetic node outputs
+without invoking any tool, LLM, or checkpoint. Use to smoke-test routing rules
+and Bosun packs without touching real systems.
 
 ## Load Foundation
 
@@ -17,25 +17,25 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/smart-stargraph/SKILL.md` and
 
 ## Parse Arguments
 
-- `<graph>` — graph name registered with `stargraph serve`, or a path to `stargraph.yaml`.
-- `--input-file <json>` — initial state. Defaults to the graph's `examples/smoke.json` if present.
-- `--seed <int>` — RNG seed for any DSPy nodes flagged `must_stub`. Default `0`.
-- `--max-steps <n>` — abort if the graph exceeds this. Default `50`.
+- `<graph>` — path to an IR YAML graph definition (commonly `<graphdir>/stargraph.yaml`).
+- `--fixtures <file>` — required. A YAML file mapping `node_id` → synthetic
+  output dict (one entry per IR node). Defaults to the graph's
+  `fixtures/*.yaml` if the user points at one.
 
 ## Run
 
 ```bash
-uv run stargraph simulate "${GRAPH}" \
-  ${INPUT_FILE:+--input-file "$INPUT_FILE"} \
-  --seed "${SEED:-0}" \
-  --max-steps "${MAX_STEPS:-50}"
+uv run stargraph simulate "${GRAPH}" --fixtures "${FIXTURES}"
 ```
+
+Output mirrors `stargraph run --inspect`: a leading
+`graph_hash=<hex>` and `rule_firings=<count>` line, followed by one row per
+rule firing.
 
 ## Report
 
-- Whether simulation completed, halted, or hit max-steps
-- Node trace: `step → node → outcome → next-rule-fired`
-- Tools that would have side-effected (with the args they were called with)
-- Any rule pack assertions that fired
-- Suggested next step: real `/stargraph:run` if clean, otherwise inspect the
-  failing rule or stub
+- The `graph_hash` and total `rule_firings`
+- The rule-firing trace: which rules fired, in declaration/`goto` order
+- Any `assert`/`retract`/`goto`/`halt` actions the fired rules produced
+- Suggested next step: real `/stargraph:run` if the trace looks right,
+  otherwise fix the failing rule `when` pattern or the fixture output it matches

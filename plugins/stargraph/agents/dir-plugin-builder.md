@@ -1,112 +1,109 @@
 ---
-description: Scaffold a directory-based Stargraph plugin under ~/.stargraph/plugins/ or $STARGRAPH_PLUGINS_DIR; verify via `stargraph plugins verify` + live reload.
+description: Scaffold an entry-point Stargraph plugin — a pip package whose pyproject declares a `stargraph_plugin` manifest factory plus capability groups (tools/skills/stores/packs); verify discovery via STARGRAPH_TRACE_PLUGINS=1.
 tools: [Bash, Read, Write, Edit]
 ---
 
-# Dir-Plugin Builder
+# Plugin Builder
 
-Builds a drop-in Stargraph plugin discovered by `stargraph-dir-plugins`. No pip
-install; same typed contract, namespace-conflict detection, signing, and
-audit chain as a pip-installed plugin once registered.
+Stargraph plugins are **entry-point** plugins: a normal pip package discovered
+via `importlib.metadata` entry points + `pluggy` hooks (two-stage loader). There
+are no directory/drop-in plugins. The `pii_guard` plugin
+(`stargraph.plugins.pii_guard`) is the reference archetype — a `@tool`-decorated
+coroutine plus governance hooks.
 
 ## Inputs
 
-- `plugin_name` — directory name and `plugin.toml` `name` field.
-- `namespaces` — list of dotted namespace prefixes claimed by the plugin.
-- `ships` — combination of `{md_skills, tools, packs, stores}`.
-- `trust_keys` — Ed25519 pubkeys for pack signing; if empty and `ships`
-  includes packs, generate a dev keypair via `fathom keygen` and persist
-  the public half in `plugin.toml`.
-- `capabilities` — list of new capability strings to declare (with
-  description + sensitivity).
-- `target_dir` — default `~/.stargraph/plugins/`; honor `$STARGRAPH_PLUGINS_DIR`
-  if set.
+- `plugin_name` — distribution + package name.
+- `namespaces` — dotted namespace prefixes the plugin claims (conflicts abort load).
+- `provides` — subset of `{tool, skill, store, pack}`.
+- `order` — load priority `0..10000` (default `5000`; collisions raise `PluginLoadError`).
 
 ## Steps
 
-1. **Scaffold layout:**
+1. **Scaffold a pip package** (pii_guard layout):
    ```
-   <target_dir>/<plugin_name>/
-     plugin.toml
-     skills/                  (if ships includes md_skills)
-     tools/                   (if ships includes tools)
-       __init__.py
-     packs/                   (if ships includes packs)
-     stores/                  (if ships includes stores)
-     capabilities.toml        (if capabilities declared)
-     README.md
+   <plugin_name>/
+     pyproject.toml
+     src/<pkg>/
+       __init__.py          (docstring)
+       _plugin.py           (manifest factory + register_* hookimpl)
+       hooks.py             (authorize_action / before|after_tool_call — optional)
+       redact.py            (the @tool-decorated coroutine — example tool)
    ```
 
-2. **Write `plugin.toml`:**
+2. **Declare entry points in `pyproject.toml`** — the manifest factory under
+   group `stargraph`, plus one or more capability groups:
    ```toml
-   name = "<plugin_name>"
-   version = "0.1.0"
-   api_version = "1.x"
-   order = 100
-   namespaces = [<namespaces>]
+   [project.entry-points."stargraph"]
+   stargraph_plugin = "<pkg>._plugin:manifest"     # returns a PluginManifest
 
-   [author]
-   name = ""
-   email = ""
-
-   [trust]
-   keys = [<trust_keys>]
-
-   [runtime]
-   python_path = ["tools"]
+   [project.entry-points."stargraph.tools"]
+   <pkg> = "<pkg>._plugin:register_tools"
+   # also available: stargraph.skills, stargraph.stores, stargraph.packs,
+   # stargraph.triggers, stargraph.mcp_adapters
    ```
 
-3. **Per artifact, delegate:**
-   - For each requested md-skill: invoke `md-skill-builder` with
-     `host_path=<target_dir>/<plugin_name>/skills/<skill>/`.
-   - For each tool: invoke the tool-builder agent against
-     `tools/<name>.py`.
-   - For each pack: invoke `pack-builder`; sign with the dev keypair if
-     no trust key was supplied.
+3. **Write `_plugin.py`** — the manifest factory + a `register_*` collect-all
+   hookimpl per capability:
+   ```python
+   from stargraph.plugin import hookimpl
+   from stargraph.ir import PluginManifest, ToolSpec
+   from <pkg>.redact import redact_pii
 
-4. **Capabilities:**
-   If `capabilities.toml` was requested, emit one entry per declared cap:
-   ```toml
-   [capabilities."<name>"]
-   description = "<description>"
-   sensitivity = "low" | "medium" | "high"
+   def manifest() -> PluginManifest:
+       return PluginManifest(
+           name="<plugin_name>",
+           version="0.1.0",
+           api_version="1",
+           namespaces=[<namespaces>],
+           provides=["tool"],
+           order=5000,
+       )
+
+   @hookimpl
+   def register_tools() -> list[ToolSpec]:
+       return [redact_pii.spec]   # .spec off the @tool wrapper
    ```
 
-5. **Offline validation:** run
-   `stargraph plugins verify <target_dir>/<plugin_name>`. Failure cases to
-   diagnose:
-   - `api_version` mismatch → bump or pin.
-   - Namespace conflict with existing plugin → rename namespace.
-   - Unsigned pack with `allow_unsigned=false` → sign or move to
-     dev-only path.
-   - Tool import failure → check `runtime.python_path`.
+4. **Per artifact, delegate:**
+   - tools → the tool-builder (`@tool`, `ToolSpec`, registry key `ns.name@ver`).
+   - skills → `skill-builder` (Python `Skill` + `register_skills`).
+   - packs → `pack-builder` (group `stargraph.packs`, `register_packs`, signing).
+   - stores → wire a `StoreSpec` + `register_stores`.
 
-6. **Live reload (optional, if `stargraph serve` is running):**
-   `stargraph plugins reload && stargraph plugins inspect <plugin_name>`.
-   Confirm: tool count, skill count, pack count, signing status, and that
-   the audit chain emitted a registration record with the plugin's
-   manifest hash.
+5. **Optional governance hooks** (`hooks.py`, pii_guard pattern):
+   `authorize_action(action) -> bool|None` (first-deny; first non-`None` wins),
+   `before_tool_call(call)` / `after_tool_call(call, result)` for audit. Register
+   these on the same plugin object.
+
+6. **Install + verify discovery** (there are no plugin verify/inspect/reload CLI subcommands):
+   ```bash
+   uv pip install -e .
+   STARGRAPH_TRACE_PLUGINS=1 stargraph run <any-graph.yaml> --inspect
+   ```
+   The trace logs every discovery, manifest validation, and registration step
+   (with the `order` it registered at). Failure cases:
+   - `api_version` not `"1"` → manifest validation fails; pin it.
+   - Namespace conflict with another plugin → load aborts; rename the namespace.
+   - `order` collision → `PluginLoadError`; pick a distinct order.
+   - Import failure in a capability module → trace shows the discovery/registration gap.
+
+   At runtime with `stargraph serve` up, confirm registered kinds via
+   `GET /v1/registry/{kind}` (`kind` ∈ `tools`, `skills`, `stores`).
 
 ## Build-Test-Fix
 
-5 iterations across verify + inspect. On signing failures, regenerate
-keypair only with explicit user confirmation — never silently rotate keys.
+5 iterations across the trace + `GET /v1/registry/{kind}`. On signing failures
+for packs, regenerate keys only with explicit user confirmation.
 
 ## Output
 
-- Tree of the created dir-plugin.
-- `stargraph plugins verify` output.
-- `stargraph plugins inspect <plugin_name>` output (or "skipped — serve not
-  running" if applicable).
-- Any unsigned-pack warnings + remediation steps.
+- Tree of the created package.
+- `STARGRAPH_TRACE_PLUGINS=1` discovery/validation/registration trace.
+- `GET /v1/registry/{kind}` result (or "skipped — serve not running").
 
 ## Constraints
 
-- The plugin **must** declare at least one namespace; bare-name plugins
-  are rejected by the loader.
-- If shipping unsigned packs in a path that production policy treats as
-  untrusted, surface the warning prominently; do NOT auto-sign with a
-  user-pubkey-claiming key.
-- Stage-1 manifest validation is import-cold (NFR-7) — do not import
-  `tools/` modules during scaffolding; rely on `stargraph plugins verify`
-  to exercise stage-2 import safely.
+- The manifest **must** declare at least one namespace; conflicts abort load.
+- Stage-1 manifest validation is import-cold — do not import capability modules
+  during scaffolding; rely on the stage-2 trace to exercise imports.

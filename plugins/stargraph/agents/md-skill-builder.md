@@ -1,83 +1,92 @@
 ---
-description: Author a SKILL.md (YAML frontmatter + markdown body) for the stargraph-md-skills compiler; validate via `stargraph skills compile`.
+description: Author a Stargraph skill bundle — the Shipwright multi-file layout (manifest.yaml + stargraph.yaml + state.py + nodes/) that packages a Python `stargraph.skills.Skill`; verify via simulate / run --inspect.
 tools: [Bash, Read, Write, Edit]
 ---
 
-# MD Skill Builder
+# Skill Bundle Builder
 
-Builds a single `SKILL.md` that compiles into a typed `stargraph.skills.Skill`.
-No Python package; the file lives inside a directory plugin
-(`~/.stargraph/plugins/<plugin>/skills/<skill-name>/SKILL.md`) or a project's
-local `skills/` tree.
+Builds a **skill bundle**: the canonical multi-file shape for a Python
+`stargraph.skills.Skill`, modeled on the in-tree Shipwright bundle
+(`src/stargraph/skills/shipwright/`). There is no markdown `SKILL.md` format —
+a skill is always a Python `Skill` (single file or this bundle layout).
 
 ## Inputs
 
-- `skill_name` (slug) — directory and frontmatter `name`.
-- `purpose` — one-sentence description.
-- `kind` — `agent` | `workflow` | `utility`.
-- `tools` — list of `<namespace>.<name>@<semver-range>` ids (must already
-  be registered, or contributed by tools elsewhere in the same dir-plugin).
-- `state_schema_fields` — `[(field_name, json_schema_type)]`; becomes the
-  declared output write-whitelist enforced by `SubGraphNode`.
-- `requires` — list of capability strings.
-- `subgraph_path` (optional) — if provided, embedded as `subgraph:` in
-  frontmatter; absent = single-step React subgraph default.
-- `examples` (optional) — list of `(inputs, expected_output)` pairs.
-- `host_path` — directory to create the skill under. Default
-  `~/.stargraph/plugins/<dir-plugin>/skills/<skill_name>/` if invoked from a
-  dir-plugin context, else `./skills/<skill_name>/`.
+- `skill_name` (slug), `purpose`, `kind` (`agent` | `workflow` | `utility`).
+- `state_fields` — `(name, type, mirrored?)`; the state model's FIELD NAMES are
+  the declared output channels / write whitelist. `set`/`set[X]` is rejected —
+  use `frozenset`.
+- `nodes` — the subgraph nodes (builtin kind or `module.path:ClassName`).
+- `rule_packs` / `governance` — Bosun packs the subgraph mounts.
+- `host_path` — directory to create the bundle under.
 
 ## Steps
 
-1. Create `<host_path>/SKILL.md`.
-2. Emit frontmatter:
+1. Create the bundle at `<host_path>/<skill_name>/` (Shipwright layout):
+   ```
+   <skill_name>/
+     manifest.yaml      skill identity + state_schema reference
+     stargraph.yaml     graph: state ref, nodes, rules, stores, checkpoints
+     state.py           the State Pydantic model
+     nodes/             per-node modules
+     templates/         prompt fragments (optional)
+     _pack.py           Bosun sub-pack loader (optional)
+   ```
+
+2. `manifest.yaml`:
    ```yaml
-   ---
-   name: <skill_name>
-   version: 0.1.0
+   id: <skill_name>
+   version: "0.1.0"
    kind: <kind>
    description: |
      <purpose>
-   requires: [<requires>]
-   tools: [<tools>]
-   state_schema:
-     <field>: { type: <type>, ... }
-   examples:
-     - inputs: { ... }
-       expected_output: { ... }
-   ---
+   state_schema: <module>.state:State
    ```
-3. Emit body skeleton with sections:
-   - `# <Title>` — derived from `purpose`.
-   - `## When to <verb>` — preconditions for activation.
-   - `## Procedure` — numbered steps using `{{ tool_descriptions }}` template
-     references.
-   - `## Failure modes` — when to refuse / escalate.
-4. If `subgraph_path` provided, write a stub IR sub-graph at that path via
-   `/stargraph:new-graph` (or scaffold inline JSON for trivial cases).
-5. If `examples` provided, drop one fixture per example into
-   `<host_path>/examples/NN_<slug>.json`.
-6. Validate: `stargraph skills compile <host_path>/SKILL.md`. On error, parse
-   the JSON envelope and surface the failure section to fix.
+
+3. `stargraph.yaml` — the bundle graph (authoring shape, richer than the
+   validated IRDocument):
+   ```yaml
+   name: <skill_name>
+   state: ./state.py:State
+   nodes:
+     - name: <node>
+       type: <module.path:ClassName | stargraph.nodes.human_input>
+   rules:
+     - pack: <bosun.pack.id>
+   stores:
+     doc: sqlite:./.<skill_name>/docs.db
+     fact: sqlite:./.<skill_name>/facts.db
+   checkpoints:
+     every: node-exit
+     store: sqlite:./.<skill_name>/checkpoints.db
+   ```
+
+4. `state.py` — the `State` model referenced from `manifest.yaml#state_schema`
+   and `stargraph.yaml#state`. Mirror fields the rule packs route on with
+   `Annotated[T, Mirror()]`; no `set` (use `frozenset`).
+5. Write `nodes/` modules for each custom node `type`.
+6. Register the bundle as a Skill plugin so the loader picks it up: a
+   `register_skills()` hookimpl under entry-point group `stargraph.skills`
+   returning the `Skill` whose `subgraph` points at the bundle graph (delegate
+   to `skill-builder` for the pyproject + `_plugin.py` wiring).
+7. **Verify** (there is no skill compiler or skill-compile CLI subcommand). Validate the
+   subgraph's IRDocument form and discovery:
+   - `uv run stargraph simulate <graph.yaml> --fixtures <fixtures.yaml>` or `run --inspect`.
+   - `STARGRAPH_TRACE_PLUGINS=1 stargraph run <any-graph.yaml> --inspect` to
+     confirm discovery + registration; or `GET /v1/registry/skills` with serve up.
 
 ## Build-Test-Fix
 
-5 iterations. On each failure, edit only the offending field; never
-overwrite the whole file blindly.
+5 iterations. On each failure edit only the offending field/file; surface the
+validation `path`/`hint` rather than overwriting blindly.
 
 ## Output
 
-- Path to `SKILL.md`.
-- Validation result (success or specific compile error).
-- If hosted inside a dir-plugin, the plugin's `plugin.toml` did NOT need to
-  change — confirm by re-running `stargraph plugins inspect <plugin>` and
-  checking the skill appears in the registered set.
+- Tree of the created bundle.
+- simulate / run --inspect output and the discovery trace / `GET /v1/registry/skills`.
 
 ## Constraints
 
-- Markdown body MUST NOT contain `<script>` tags or raw HTML — the prompt is
-  data, not code (`stargraph-md-skills` rejects these).
-- Tool refs MUST be `<namespace>.<name>@<semver-range>` format; bare names
-  fail compile with an unambiguous error.
-- `state_schema` fields are the **only** allowed boundary writes; document
-  which sub-graph step writes which field.
+- The state model's field names are the **only** allowed boundary writes;
+  document which subgraph node writes which field.
+- Tool refs are registry-key ids `<namespace>.<name>@<version>` — never bare names.

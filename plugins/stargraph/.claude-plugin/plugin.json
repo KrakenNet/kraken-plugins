@@ -1,9 +1,9 @@
 {
   "name": "stargraph",
-  "version": "0.3.0",
-  "description": "Author + operate Stargraph — graphs, skills, nodes, tools, triggers, Bosun rule packs, markdown SKILL.md skills, directory-based plugins; run/replay/counterfactual against stargraph serve, drive HITL, inspect checkpoints.",
+  "version": "0.4.0",
+  "description": "Author + operate Stargraph — IRDocument graphs, nodes, @tool callables, Python Skill bundles, entry-point plugins, triggers, Bosun rule packs; run/inspect/replay/counterfactual against stargraph serve, drive HITL, verify audit logs.",
   "author": {"name": "kraken-networks"},
   "repository": "https://github.com/KrakenNet/stargraph",
   "license": "Apache-2.0",
-  "keywords": ["stargraph","graphs","skills","tools","triggers","provenance","authoring","orchestration","hitl","counterfactual","bosun","skill-md","dir-plugin"]
+  "keywords": ["stargraph","graphs","skills","tools","triggers","provenance","authoring","orchestration","hitl","counterfactual","bosun","ir","plugins"]
 }

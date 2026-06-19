@@ -1,94 +1,148 @@
 # Stargraph Triggers
 
-Reference for trigger plugins: how runs get initiated by external events.
+Reference for triggers: how runs get initiated by external events.
+
+Triggers are pluggy plugins that emit `TriggerEvent` objects into the scheduler
+queue. They are authored in `triggers.yaml` under the runtime config dir
+(`~/.config/stargraph/triggers.yaml`, overridable via `STARGRAPH_CONFIG_DIR`) and
+loaded at `stargraph serve` startup.
 
 ## Built-in trigger types
 
-| Type | Use when | Plugin entry-point |
-|---|---|---|
-| `manual` | Default. Runs kicked off via `POST /v1/runs` (or `stargraph run`). | `stargraph.triggers.manual:ManualTrigger` |
-| `cron` | Scheduled, recurring runs (digests, sweeps, polls). | `stargraph.triggers.cron:CronTrigger` |
-| `webhook` | External system push (GitHub, Linear, Slack, …). | `stargraph.triggers.webhook:WebhookTrigger` |
+There are exactly three built-ins:
 
-Other trigger types (`mcp`, `file_watch`) are reserved for future plugins —
-ship them as separate distributions when needed.
+| Type | Use when | Module |
+|---|---|---|
+| `manual` | Default. Runs kicked off via `stargraph run` or `POST /v1/runs`. | `stargraph.triggers.manual` |
+| `cron` | Scheduled, recurring runs (digests, sweeps, polls). | `stargraph.triggers.cron` |
+| `webhook` | External system push (GitHub, Linear, Slack, …). | `stargraph.triggers.webhook` |
+
+(`mcp_adapters` is a plugin group, not a trigger kind. There is no `file_watch`
+built-in.)
+
+## triggers.yaml schema
+
+A top-level `version: "1.0"` followed by per-kind lists:
+
+```yaml
+version: "1.0"
+
+manual:
+  - id: research-adhoc
+    graph_id: research
+    description: "Ad-hoc research run"
+
+cron:
+  - id: cron:nightly-research
+    graph_id: research
+    expr: "0 3 * * *"          # standard 5-field cron
+    tz: UTC                     # IANA name; resolved at init
+    missed_fire_policy: fire_once_catchup   # or: skip
+    params:
+      query: "weekly digest"
+
+webhook:
+  - id: webhook:github-pr
+    graph_id: pr_triage
+    path: /triggers/github               # must start with /; mounted by the webhook trigger
+    timestamp_window_seconds: 300
+    nonce_lru_size: 10000
+    current_secret_env: STARGRAPH_WEBHOOK_SECRET_CURRENT
+    previous_secret_env: STARGRAPH_WEBHOOK_SECRET_PREVIOUS
+```
 
 ## Cron triggers
 
-Stargraph's scheduler uses `cronsim` for DST-safe expressions. 5-field cron only.
+The cron trigger uses `cronsim.CronSim` for DST-safe expressions (5-field cron
+only). On `start` it spawns one background `asyncio.Task` per spec that computes
+`next_fire`, sleeps until then, derives the idempotency key, and enqueues.
 
-```yaml
-triggers:
-  - name: nightly_research
-    type: cron
-    cron: "0 3 * * *"          # 03:00 every day
-    timezone: UTC               # default; or America/Los_Angeles
-    dedup_key: research:nightly
-    jitter_seconds: 60          # optional; spreads cluster-wide load
-    input:
-      query: "weekly digest"
-```
-
-**Per-graph capacity** is enforced by `anyio.CapacityLimiter` honoring the
-graph IR's `concurrency`. Two firings in the same minute won't trample each
-other; the second waits or is dropped depending on `concurrency` policy.
-
-**Idempotency**: `dedup_key` is BLAKE3-keyed by the scheduler. Re-firings
-with the same key inside a graph's `dedup_window` are coalesced.
+- `tz` is an IANA timezone name (e.g. `UTC`, `America/New_York`), resolved at
+  init — bad config fails fast.
+- `missed_fire_policy`: `fire_once_catchup` (default) fires once for the most
+  recent missed scheduled time so the idempotency key matches a never-down
+  system; `skip` jumps straight to the next future fire.
+- **Idempotency key**: `sha256(trigger_id || scheduled_fire.isoformat())`. The
+  ISO format includes the tz offset, so the same wall-clock instant in different
+  zones produces distinct keys.
 
 ## Webhook triggers
 
-```yaml
-triggers:
-  - name: github_pr
-    type: webhook
-    path: /hooks/github-pr
-    secret_env: STARGRAPH_HOOK_GITHUB_PR    # HMAC verify on inbound POST
-    method: POST                          # default
-    dedup_key: gh:${headers.x-github-delivery}
-    input_template:                       # JSON-pointer mapping
-      pr_number: /pull_request/number
-      repo:      /repository/full_name
-      action:    /action
-```
+The webhook trigger mounts a FastAPI `POST` route per spec and verifies inbound
+bodies with a Stripe-style HMAC-SHA256 signature before enqueueing a run.
 
-- `${STARGRAPH_URL}/hooks/github-pr` returns `202 {run_id}` on accept,
-  `401` on bad HMAC, `409` on dedup hit.
-- `secret_env` MUST be set in the deployment env. Cleared profile refuses
-  to register a webhook trigger missing the secret.
-- `input_template` resolves JSON pointers against the request body and a
-  small `${headers.*}` namespace. Missing pointers are nullable; type
-  coercion follows the graph's State schema.
+- The route is mounted at `path` on the running `stargraph serve` app.
+- `current_secret_env` / `previous_secret_env` name the environment variables
+  holding the HMAC keys (e.g. `STARGRAPH_WEBHOOK_SECRET_CURRENT` /
+  `STARGRAPH_WEBHOOK_SECRET_PREVIOUS`). `current_secret` is used for both signing
+  and verification; `previous_secret` is valid for verification only (rotation
+  grace).
+- Verification gauntlet (in order): read `X-Stargraph-Timestamp` /
+  `X-Stargraph-Signature` headers → timestamp within `timestamp_window_seconds`
+  → constant-time HMAC compare against current then previous → nonce LRU replay
+  check → enqueue.
+- **Idempotency key**: `sha256(trigger_id || sha256(raw_body))`.
+- Status codes: `401` on missing headers / out-of-window timestamp / bad HMAC;
+  `409` on a duplicate nonce; `400` on malformed JSON body.
 
 ## Manual triggers
 
-No YAML entry. The `manual` plugin is always registered. `POST /v1/runs`
-with `{graph, input}` is the canonical entry point.
+The `manual` trigger is the convergence point for operator-initiated runs: both
+`stargraph run` and `POST /v1/runs` resolve to the same `enqueue` call. List an
+entry in `triggers.yaml` to document an intended manual entry point; it has no
+on-disk polling behavior.
 
 ```bash
-curl -fsS -X POST "${STARGRAPH_URL}/v1/runs" \
-  -H "Authorization: Bearer ${STARGRAPH_TOKEN}" \
+curl -fsS -X POST "http://localhost:8000/v1/runs" \
   -H "Content-Type: application/json" \
-  -d '{"graph":"research","input":{"query":"…"}}'
+  -d '{"graph_id":"research","params":{"query":"…"}}'
 ```
 
-## Listing & introspection
+Retrieve the run handle via `GET /v1/runs/{run_id}`.
 
-```bash
-GET  /v1/triggers                  # all triggers, all graphs
-GET  /v1/triggers?graph=research   # per graph
-GET  /v1/triggers/<name>           # next_fire_at, last_fire_at, fire_count
+## TriggerEvent
+
+Every trigger emits a `stargraph.triggers.TriggerEvent` into the scheduler queue:
+
+| Field | Type | Description |
+|---|---|---|
+| `trigger_id` | `str` | Emitting trigger instance (e.g. `"cron:nightly-research"`). |
+| `scheduled_fire` | `datetime` | Canonical fire time (cron-tick instant; receipt time for webhook/manual). |
+| `idempotency_key` | `str` | Pre-computed dedup key; the scheduler dedupes against pending-run state before enqueueing. |
+| `payload` | `dict` | JSON-serializable parameters forwarded to the run as `params`. |
+
+`TriggerEvent` carries `extra='forbid'`, so `payload` is the escape hatch for
+trigger-specific data.
+
+## Trigger plugins
+
+To add a new trigger family, build a plugin that registers under the
+`stargraph.triggers` entry-point group (name → `TriggerPlugin` class):
+
+```toml
+[project.entry-points."stargraph.triggers"]
+my_trigger = "my_pkg.triggers:MyTriggerPlugin"
 ```
 
-`stargraph.yaml` is the source of truth; the scheduler reconciles on graph
-register/update. There is no separate trigger CRUD API — change the YAML,
-re-register the graph.
+A trigger implements the `Trigger` protocol — `init(deps)` / `start()` /
+`stop()` / `routes()`. The serve lifespan dispatches these per-plugin with
+exception isolation so one bad trigger cannot block the others.
+
+## Verifying a trigger
+
+Add the entry to `triggers.yaml`, start `stargraph serve`, and confirm the
+scheduler picks it up:
+
+- Cron: a background task is spawned per spec.
+- Webhook: its `POST` route is mounted — confirm the mounted path and that the
+  target graph appears in `GET /v1/graphs`.
 
 ## Authoring checklist
 
-- [ ] Every trigger has a `dedup_key` — never rely on accidental uniqueness.
-- [ ] Webhook secrets live in env vars, not in YAML.
-- [ ] Cron triggers declare `timezone` explicitly (don't trust the host).
-- [ ] `input` / `input_template` is shaped to the graph's State schema —
-      run `stargraph graph verify` after editing.
-- [ ] Cleared deployments: webhook triggers only with a registered HMAC secret.
+- [ ] Cron triggers declare `tz` explicitly (don't trust the host); a UTC server
+      is recommended for air-gapped deployments.
+- [ ] Webhook secrets live in env vars named by `current_secret_env` /
+      `previous_secret_env`, never in YAML.
+- [ ] `params` / webhook body is shaped to the target graph's state schema —
+      validate by loading the graph with `stargraph run GRAPH --inspect`.
+- [ ] Webhook `path` starts with `/` and is unique across triggers.

@@ -1,6 +1,6 @@
 ---
-description: Wire a trigger (manual / cron / webhook) onto a Stargraph graph and verify scheduler pickup
-argument-hint: <graph> --type manual|cron|webhook [--cron <expr>] [--path <url>] [--name <id>]
+description: Author a trigger in triggers.yaml (manual / cron / webhook) and verify scheduler pickup at serve startup
+argument-hint: <graph-id> --type manual|cron|webhook [--cron <expr>] [--path <url>] [--id <id>]
 allowed-tools: [Bash, Read, Write, Edit, AskUserQuestion]
 ---
 
@@ -13,57 +13,81 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/smart-stargraph/SKILL.md` and
 
 ## Parse Arguments
 
-- `<graph>` (required) — graph the trigger fires on.
-- `--type` ∈ {`manual`, `cron`, `webhook`}. Required.
-- `--cron <expr>` — cronsim expression, required when type=cron. Use 5-field cron;
-  Stargraph scheduler is DST-safe.
-- `--path <url-suffix>` — public path for webhook. Required when type=webhook.
-- `--name <id>` — trigger ID. Auto-generated from `(graph, type, idx)` if omitted.
+- `<graph-id>` (required) — the `graph_id` the trigger enqueues.
+- `--type` ∈ {`manual`, `cron`, `webhook`}. These are the ONLY three built-ins.
+- `--cron <expr>` — 5-field cron expression, required when type=cron. Parsed by
+  `cronsim` (DST-safe); invalid syntax fails at serve startup.
+- `--path <url-suffix>` — HTTP path the webhook route mounts (must start with
+  `/`). Required when type=webhook.
+- `--id <id>` — trigger id (e.g. `cron:nightly-cve-feed`). Goes into the
+  idempotency key, so it must be unique across the deployment.
 
 If a required arg is missing for the chosen type, prompt with AskUserQuestion.
 
-## Edit stargraph.yaml
+## Edit triggers.yaml
 
-Add a `triggers:` block on the graph:
+Triggers are authored in `~/.config/stargraph/triggers.yaml` (override the dir
+with env `STARGRAPH_CONFIG_DIR`), loaded at `stargraph serve` startup. Top-level
+`version: "1.0"`, then per-kind lists.
+
+**manual** — no on-disk behavior; equals `stargraph run` + `POST /v1/runs`:
 
 ```yaml
-triggers:
-  - name: nightly_research
-    type: cron
-    cron: "0 3 * * *"
-    timezone: UTC
-    dedup_key: research:nightly
-    input:
+version: "1.0"
+manual:
+  - id: digest-now
+    graph_id: <graph-id>
+    description: "Kick a digest run on demand."
+```
+
+**cron** — `cronsim`-driven background loop, one task per spec:
+
+```yaml
+cron:
+  - id: cron:nightly-research
+    graph_id: <graph-id>
+    expr: "0 3 * * *"
+    tz: UTC
+    missed_fire_policy: fire_once_catchup
+    params:
       query: "weekly digest"
 ```
 
-For webhooks, also generate an HMAC secret and store in `.env.example`:
+**webhook** — HMAC-SHA256-verified POST route. Secrets live in env vars named
+per-spec (set `STARGRAPH_WEBHOOK_SECRET_CURRENT` / `STARGRAPH_WEBHOOK_SECRET_PREVIOUS`
+or your own var names) — never in the file:
 
 ```yaml
-  - name: github_pr
-    type: webhook
-    path: /hooks/github-pr
-    secret_env: STARGRAPH_HOOK_GITHUB_PR
-    dedup_key: gh:${headers.x-github-delivery}
+webhook:
+  - id: webhook:github-pr
+    graph_id: <graph-id>
+    path: /triggers/github-pr
+    timestamp_window_seconds: 300
+    nonce_lru_size: 10000
+    current_secret_env: STARGRAPH_WEBHOOK_SECRET_CURRENT
+    previous_secret_env: STARGRAPH_WEBHOOK_SECRET_PREVIOUS
 ```
 
-For manual triggers (the default), no scheduler entry — runs are kicked off via
-`POST /v1/runs` or `/stargraph:run`.
+To build a *custom* trigger kind, ship a plugin under entry-point group
+`stargraph.triggers` (name → `Trigger` class with `init/start/stop/routes`),
+emitting `TriggerEvent{trigger_id, scheduled_fire, idempotency_key, payload}`
+into the scheduler queue (deduped by `idempotency_key`).
 
 ## Verify
 
 ```bash
-uv run stargraph graph verify "${GRAPH}"
-curl -fsS "${STARGRAPH_URL}/v1/triggers" -H "Authorization: Bearer ${STARGRAPH_TOKEN}" | \
-  jq --arg g "${GRAPH}" '.data[] | select(.graph == $g)'
+uv run stargraph serve --graph "<graph.yaml>"
 ```
 
-For cron: ensure the scheduler picked it up — `next_fire_at` should be populated.
-For webhook: hit it with a sample payload and confirm a 202 + `run_id`.
+On startup the scheduler picks the trigger up: cron spawns one `asyncio.Task`
+per spec; webhook mounts its `POST` route. Confirm with `GET /v1/graphs` (graph
+registered) and, for webhooks, that the mounted `path` answers. Default serve
+URL is `http://localhost:8000`.
 
 ## Report
 
-- Trigger ID, graph, type, schedule/path
-- Dedup key
-- For webhook: signed-cURL example for testing
-- For cron: next 3 fire times (use cronsim if available locally)
+- Trigger id, graph_id, type, schedule/path.
+- For webhook: the env vars holding the current/previous secrets and a signed
+  sample (HMAC of `"{ts}.{body}"`, headers `X-Stargraph-Timestamp` /
+  `X-Stargraph-Signature`).
+- For cron: the 5-field expr and tz.

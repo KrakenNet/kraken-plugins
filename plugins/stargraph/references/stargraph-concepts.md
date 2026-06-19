@@ -25,7 +25,7 @@
 | **Provider** | A concrete implementation of a Store Protocol (e.g., LanceDB is a vector provider). |
 | **Checkpoint** | A persisted snapshot at a transition: state, facts, last node, next action, graph hash. |
 | **Graph hash** | Structural fingerprint: topology + node signatures + state schema. Used for resume safety. |
-| **Trigger** | An external event source that initiates a run: `cron`, `webhook`, `file_watch`, `mcp`, `manual`. |
+| **Trigger** | An external event source that initiates a run: `manual`, `cron`, `webhook`. |
 | **Run history** | The ordered list of checkpoints + events for a run. The basis for replay and counterfactuals. |
 
 ---
@@ -37,7 +37,7 @@ These pairs are routinely confused. The distinction matters.
 ### Node vs Tool
 - A **node** is a step in a graph. Has state in/out semantics.
 - A **tool** is a callable a node may invoke. May not appear in the graph at all.
-- A node *can be* a single tool call (`stargraph.nodes.tool_call`), but most nodes do more.
+- A node *can be* a single tool call (a node of `kind: tool`), but most nodes do more.
 
 ### Skill vs Plugin
 - A **skill** is a logical bundle of capability (e.g., "research").
@@ -82,11 +82,11 @@ These pairs are routinely confused. The distinction matters.
 
 ## Naming conventions
 
-- **Tool names:** `namespace.name` (e.g., `web.search`, `kraken.servicenow.create_incident`)
-- **Skill names:** lowercase, hyphenated, plugin-namespaced (`research-agent`, `kraken/triage`)
-- **Pack names:** `vendor:pack@version` (e.g., `bosun:budgets@1.2`)
+- **Tool registry key:** `namespace.name@version` (e.g., `nautilus.broker_request@1`). This is the canonical form a graph references — not bare `namespace.name`.
+- **Skill names:** lowercase, hyphenated; the computed `site_id` is `name@version`.
+- **Pack ids:** slug form with a separate `version` field (e.g., `stargraph.bosun.budgets` at version `1.0`, `soc-policy`). Not `vendor:pack@version`.
 - **Fact templates:** `stargraph.*` reserved for runtime; `bosun.*` for governance; `user.*` for application-defined
-- **Run IDs:** `r-` prefix + 6-char base32
+- **Run IDs:** UUIDv7 strings (sortable by creation time); counterfactual forks are `cf-<uuid>`
 
 ---
 

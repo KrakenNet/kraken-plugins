@@ -1,6 +1,6 @@
 ---
-description: Inspect a Stargraph run — events, state diff per checkpoint, fact stream, graph hash
-argument-hint: <run_id> [--events] [--facts] [--diff]
+description: Inspect a Stargraph run — timeline, state at step, CLIPS fact diff
+argument-hint: <run_id> --db <path> [--step <n>] [--diff <n> <m>]
 allowed-tools: [Bash, Read]
 ---
 
@@ -10,43 +10,37 @@ allowed-tools: [Bash, Read]
 
 Read `${CLAUDE_PLUGIN_ROOT}/skills/smart-stargraph/SKILL.md`.
 
-## Verify Server
-
-`GET ${STARGRAPH_URL}/health`.
-
 ## Run
+
+`stargraph inspect` is a read-only inspector over a SQLite checkpointer DB
+(default `./.stargraph/run.sqlite`). The mode selector is `--diff` > `--step`
+> timeline; both `--diff` and `--step` require `--db`.
 
 ```bash
 RID="$1"
+DB="${DB:-./.stargraph/run.sqlite}"
 
-# Run header — status, graph_hash, started/finished, trigger
-curl -fsS "${STARGRAPH_URL}/v1/runs/${RID}" \
-  -H "Authorization: Bearer ${STARGRAPH_TOKEN}" | \
-  jq '{run_id, status, graph_hash, started_at, finished_at, trigger}'
+# Timeline view — per-step node lifecycle, enriched with the audit log
+uv run stargraph inspect "${RID}" --db "${DB}" --log-file ./.stargraph/run.jsonl
 
-# Checkpoints — node, step, state diff summary
-curl -fsS "${STARGRAPH_URL}/v1/runs/${RID}/checkpoints" \
-  -H "Authorization: Bearer ${STARGRAPH_TOKEN}" | \
-  jq '.data[] | {step, node, next, fact_count, state_diff_summary}'
-
-# Events — full timeline (if --events)
-if [[ "$*" == *--events* ]]; then
-  curl -fsS "${STARGRAPH_URL}/v1/runs/${RID}/events" \
-    -H "Authorization: Bearer ${STARGRAPH_TOKEN}" | jq .
+# State-at-step view — IR-canonical state dict at step N (if --step)
+if [[ "$*" == *--step* ]]; then
+  uv run stargraph inspect "${RID}" --db "${DB}" --step "${STEP}"
 fi
 
-# Facts at terminal step (if --facts)
-if [[ "$*" == *--facts* ]]; then
-  curl -fsS "${STARGRAPH_URL}/v1/runs/${RID}/facts" \
-    -H "Authorization: Bearer ${STARGRAPH_TOKEN}" | \
-    jq '.data[] | {template, slots, origin, source, confidence}'
+# Fact-diff view — CLIPS facts asserted/retracted between step N and M (if --diff)
+if [[ "$*" == *--diff* ]]; then
+  uv run stargraph inspect "${RID}" --db "${DB}" --diff "${N}" "${M}"
 fi
 ```
 
+Without `--db`, passing only `--log-file PATH` streams raw JSONL events
+(legacy mode); an empty filter result there exits non-zero (force-loud).
+
 ## Report
 
-- Status, graph_hash (full + short), wall time, total steps, total facts
-- Node-by-node table: step → node → outcome → key state changes
-- Any `disagreement` facts (dual-truth divergences)
-- Provenance breakdown: counts by `origin` (llm/tool/rule/model/external)
-- If `status == FAILED` or `HALTED`: error/halt rule + offending facts
+- From the timeline: status, graph_hash (full + short), total steps
+- Node-by-node table: step → node → outcome → key state changes (`--step` per step)
+- Fact delta from `--diff N M`: CLIPS facts added/removed, with their `origin`/`source`
+- Provenance breakdown: counts by documented `origin` (`tool`/`llm`/`rule`/`system`)
+- If terminal status is `failed`: the halt/error rule + offending facts
