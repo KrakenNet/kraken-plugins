@@ -4,116 +4,122 @@ How a Stargraph run pauses for human input or approval, and how to resume it.
 
 ## When a run pauses
 
-A run enters `PAUSED_HITL` when one of these happens:
+A run enters `awaiting-input` when an **interrupt** fires. Dispatch happens on
+`Action.kind == "interrupt"` (or an `interrupt` node) **before** routing is
+translated — it is a control-flow primitive, not a routing decision. The runtime
+checkpoints, marks the run awaiting input, and emits a `WaitingForInputEvent`
+carrying the prompt, the `interrupt_payload`, and the `requested_capability`.
 
-1. **`human_input` node** — a node whose `type: stargraph.nodes.human_input`
-   produces no value on its own; it just declares an `expected_input_schema`
-   and a `prompt`. The runtime checkpoints, marks the run paused, and emits
-   a `(hitl.required ...)` fact.
-2. **Governance halt** — a Bosun rule emits `halt: true, reason: hitl.<…>`.
-   Common causes: budget cap, safety violation, policy gate.
-3. **Approval gate** — a transition rule fires `pause_for_approval: <node>`
-   instead of `goto`. The next node won't execute until a `respond` arrives.
-
-In all three cases the run stays resumable from its last checkpoint until the
-operator either responds or cancels.
+The run stays resumable from its last checkpoint until the operator either
+responds or the wait times out.
 
 ## Authoring a pause point
 
-### `human_input` node (preferred)
+### `interrupt` node
 
 ```yaml
 nodes:
-  - name: confirm_action
-    type: stargraph.nodes.human_input
-    prompt: "About to delete {{state.target}}. Confirm?"
-    expected_input_schema:
-      type: object
-      required: [confirmed]
-      properties:
-        confirmed: {type: boolean}
-        reason:    {type: string}
-    timeout_seconds: 3600
-    on_timeout: halt        # or: continue (with default), goto:<node>
+  - id: analyst_gate
+    kind: interrupt
+    config:
+      prompt: "Approve disposition {disposition} for alert {alert_id}?"
+      requested_capability: "runs:respond"
+      interrupt_payload:
+        requested_capability: "runs:respond"
+      timeout: "PT900S"        # ISO-8601 duration; null = no timeout
+      on_timeout: "halt"       # "halt" (terminal) or "goto:<node_id>"
 ```
 
-The `prompt` is interpolated against state at pause time. The schema is
-served to the responder UI / CLI so payloads can be validated before submit.
+The `prompt` is interpolated against state at pause time and surfaced on the
+`WaitingForInputEvent`.
 
-### Governance pause
+### `interrupt` rule action
+
+The same primitive is available as a `RuleSpec.then` action, so a routing rule
+can pause the run when a condition matches:
 
 ```yaml
-# in a Bosun pack
-- name: require-approval-on-prod-write
-  when:
-    - { template: tool.target.env, op: eq, value: prod }
-    - { template: tool.permissions, op: contains, value: write }
-  then:
-    pause_for_approval: ${last_node}
-    reason: prod-write-needs-approval
-    audience: ops
+rules:
+  - id: r-analyst-gate
+    when: "?n <- (node-id (id analyst_gate))"
+    then:
+      - kind: interrupt
+        prompt: "Approve disposition {disposition} for alert {alert_id}?"
+        interrupt_payload:
+          requested_capability: "runs:respond"
+        requested_capability: "runs:respond"
+        timeout: null
+        on_timeout: "halt"
 ```
 
-`audience` is a free-form tag the responder UI can filter on (`ops`, `legal`,
-`compliance`, …). It's also written into the `(hitl.required …)` fact so
-downstream queries can find what's pending and for whom.
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `prompt` | `str` | required | Operator-facing prompt on the wait event. |
+| `interrupt_payload` | `dict` | `{}` | Free-form payload echoed on the wait event. |
+| `requested_capability` | `str \| None` | `None` | Capability gate for `POST /v1/runs/{id}/respond`. |
+| `timeout` | `timedelta \| None` | `None` | Wait bound; `None` means no timeout. |
+| `on_timeout` | `"halt" \| "goto:<node_id>"` | `"halt"` | Terminal halt, or resume at a node. |
 
 ## Responding
 
-Three decision shapes:
+Resume a paused run by delivering a response to its `respond` endpoint. The
+caller must hold the interrupt's `requested_capability` (e.g. `runs:respond`).
 
-| Decision | When to use | Resume behavior |
-|---|---|---|
-| `approve` | Approval-gate / `human_input` boolean confirms. | Run continues from the next transition. |
-| `deny` | Reject the action. | Halt with reason; emits `(hitl.denied …)`. |
-| `input` | `human_input` node expects structured data. | Payload becomes the node's output state slice. |
+### `stargraph respond` (CLI)
 
-Submit via `/stargraph:respond` or directly:
+A thin wrapper over `POST /v1/runs/{run_id}/respond` on a running
+`stargraph serve` process:
 
 ```bash
-curl -fsS -X POST "${STARGRAPH_URL}/v1/runs/${RID}/respond" \
-  -H "Authorization: Bearer ${STARGRAPH_TOKEN}" \
+stargraph respond <RUN_ID> --response analyst-decision.json --actor alice
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `RUN_ID` | yes | Run id that is `awaiting-input`. |
+| `--response FILE` | yes | JSON file with the analyst response payload. |
+| `--actor NAME` | yes | Principal id; sent as `Authorization: Bypass <actor>`. |
+| `--server URL` | no | Base URL of the serve process (default `http://localhost:8000`). |
+
+The CLI maps HTTP errors to operator-friendly messages: `200` prints the
+`RunSummary` JSON; `401` = auth failed for actor; `404` = run not found or not
+awaiting input; `409` = run not awaiting input (already responded or in a
+conflicting state).
+
+### Direct HTTP
+
+```bash
+curl -fsS -X POST "http://localhost:8000/v1/runs/${RID}/respond" \
+  -H "Authorization: Bypass alice" \
   -H "Content-Type: application/json" \
-  -d '{"decision":"input","payload":{"confirmed":true,"reason":"verified ticket #123"}}'
+  -d @analyst-decision.json
 ```
 
-`payload` is validated against `expected_input_schema` server-side; bad
-payloads return `422` with the failing JSON-pointer.
+## Audit trail
 
-## Audit fact
-
-Every response emits a `(human_response …)` fact carrying:
-
-```
-(human_response
-  decision   approve|deny|input
-  payload    <jsonb>          ; null for approve/deny without data
-  reason     <string>         ; required for deny
-  by         <responder_id>   ; from auth token's `sub` claim
-  ts         <iso8601>
-  origin     user             ; provenance
-  source     hitl-driver      ; or whichever responder client
-  run_id     <run_id>
-  step       <step>)
-```
-
-Bosun `audit` pack signs these facts so the resume action is non-repudiable.
+The response is sealed into the run's provenance trail. Provenance carries the
+documented origin values (`tool`, `llm`, `rule`, `system`); the responding
+actor is recorded from the `Authorization: Bypass <actor>` principal. The
+`stargraph.bosun.audit` pack signs transition facts so the resume action is
+non-repudiable. See `references/provenance-facts.md`.
 
 ## Cleared / air-gapped deployments
 
-- `expected_input_schema` MUST be present — payloads without a schema are
-  rejected outright in the `cleared` profile.
-- Every responder authenticates via JWT; `sub` claim becomes the `by` slot.
-- `respond` calls write to the JSONL audit log even before the run resumes,
-  so the operator action is recorded even if the resume fails downstream.
+- Every responder is identified by the `--actor` principal, which becomes the
+  recorded actor on the response.
+- The serve process writes to the JSONL audit log (see `stargraph serve
+  --audit-log`), so the operator action is recorded.
+- Inspect what a paused run was waiting on, and the state at the pause, with
+  `stargraph inspect RUN_ID --db DB --step N`.
 
 ## Common patterns
 
-- **Two-key approval**: emit two `pause_for_approval` rules requiring
-  distinct `audience` tags. The second `respond` call resumes; the first
-  flips a `(hitl.first_key …)` fact.
-- **Deferred input**: `human_input` with `timeout_seconds: 86400` for slow
-  human review (overnight ops). Pair with `bosun:budgets` so wall-time
-  doesn't blow the run budget.
-- **Inline rationale**: require `reason` in the schema for any `deny` —
-  audit captures *why*, not just *that*.
+- **Finite wait for hot-resume**: set a finite `timeout` (e.g. `PT900S`) so the
+  serve loop takes its hot-resume path — `POST /v1/runs/{id}/respond` wakes the
+  same live loop, which advances past the gate. `on_timeout: "halt"` keeps an
+  unanswered gate terminal, not hung.
+- **Resume-to-node**: `on_timeout: "goto:<node_id>"` resumes at a fallback node
+  instead of halting when the operator never responds.
+- **Capability-scoped approvals**: set `requested_capability` so only principals
+  holding that capability can respond — the gate runs on the `respond` endpoint
+  before the run resumes.

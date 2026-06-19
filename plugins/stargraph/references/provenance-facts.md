@@ -1,36 +1,45 @@
 # Stargraph Provenance-Typed Facts
 
-Every fact asserted in a Stargraph run carries provenance metadata. Rules can pattern-match on it, audit can reconstruct it, and replay can filter on it.
+Every fact asserted in a Stargraph run carries provenance metadata. Rules can
+pattern-match on it, audit can reconstruct it, and replay can filter on it.
+Provenance is non-negotiable — a run without a complete trace is treated as an
+error, not a warning.
 
-## The Tuple
+## The Envelope
 
-Every fact carries:
+Tools and nodes attach a `__stargraph_provenance__` envelope to their outputs:
 
-```
-(origin, source, run_id, step, confidence, timestamp)
+```json
+{
+  "...": "output fields",
+  "__stargraph_provenance__": {
+    "origin": "tool",
+    "source": "nautilus",
+    "external_id": "<broker request_id>"
+  }
+}
 ```
 
 | Field | Type | Meaning |
 |---|---|---|
-| `origin` | symbol | Where the fact came from (see Origin Values). |
-| `source` | string | Specific emitter — node name, tool name, rule name, user id. |
-| `run_id` | string | The run that produced the fact. |
-| `step` | int | Monotonic step counter within the run. |
-| `confidence` | float | In [0, 1]. See Confidence Convention. |
-| `timestamp` | datetime | UTC, ISO-8601. |
+| `origin` | string | Where the value came from (see Origin Values). |
+| `source` | string | Specific emitter — node name, tool name, rule name, subsystem. |
+| `external_id` | string | Optional id correlating to the external system that produced it. |
 
-The runtime stamps these automatically; nodes and rules cannot forge them.
+When the envelope is folded into the fact store, the fact additionally carries
+run-scoped metadata — `run_id`, `step`, `confidence`, and a `timestamp` — which
+the runtime stamps automatically. Nodes and rules cannot forge them.
 
 ## Origin Values
 
+The documented origin values are:
+
 | `origin` | Emitted when | Meaning |
 |---|---|---|
-| `llm` | An LLM-backed node (DSPy module, raw chat) emits a fact derived from model output. | Treat as plausibly-true; verify before acting. |
-| `tool` | A tool call returns structured data. | High trust if the tool itself is trusted; carries the tool's own confidence if available. |
-| `user` | A human input arrives via API or UI. | Authoritative for the user's domain — typically pinned at confidence 1.0. |
-| `rule` | A Bosun/CLIPS rule asserts a derived fact in its RHS. | Symbolic derivation; confidence inherited from premises (min by default). |
-| `model` | A non-LLM ML model (classifier, regressor, embedder) emits a prediction. | Carry the model's calibrated probability as confidence. |
-| `external` | A trigger or webhook injects facts at run start. | Trust depends on the trigger source. |
+| `tool` | A tool call returns structured data. | High trust if the tool itself is trusted. |
+| `llm` | An LLM-backed node (DSPy module, raw chat) emits a value derived from model output. | Treat as plausibly-true; verify before acting. |
+| `rule` | A Fathom/CLIPS rule asserts a derived fact in its RHS. | Symbolic derivation from premises. |
+| `system` | The runtime or a subsystem (e.g. trigger / scheduler / audit sink) emits the fact. | Runtime-attested. |
 
 ## Pattern Matching on Provenance
 
@@ -47,67 +56,64 @@ Only act on tool-origin facts with confidence at least 0.8:
   (assert (next-node synthesize)))
 ```
 
-Halt if a user-origin fact contradicts a rule-origin fact:
+Prefer rule-derived facts over raw LLM output for the same key:
 
 ```clips
-(defrule user-overrides-rule
-  (claim (subject ?s) (value ?v1) (origin user))
-  (claim (subject ?s) (value ?v2&~?v1) (origin rule))
-  =>
-  (assert (control halt))
-  (assert (audit (reason "user contradicts rule") (subject ?s))))
-```
-
-Prefer model-origin facts over llm-origin for the same key:
-
-```clips
-(defrule prefer-model-over-llm
+(defrule prefer-rule-over-llm
   ?bad <- (label (key ?k) (origin llm))
-  (label (key ?k) (origin model))
+  (label (key ?k) (origin rule))
   =>
   (retract ?bad))
 ```
 
+Halt if a system-origin fact contradicts an LLM-origin one:
+
+```clips
+(defrule system-overrides-llm
+  (claim (subject ?s) (value ?v1) (origin system))
+  (claim (subject ?s) (value ?v2&~?v1) (origin llm))
+  =>
+  (assert (control halt))
+  (assert (audit (reason "system contradicts llm") (subject ?s))))
+```
+
 ## Confidence Convention
 
-`confidence` is a float in `[0, 1]`. Each origin documents its calibration:
+`confidence` is a float in `[0, 1]`. Calibration varies by origin:
 
-- `user` — typically 1.0 unless the UI captured uncertainty.
-- `tool` — the tool's own confidence if it returns one; else 1.0 for deterministic tools, 0.9 default for retrieval scores normalized to [0, 1].
-- `llm` — DSPy modules emit logprob-derived confidence when available; otherwise the convention is 0.7 default unless the prompt asks the model for a self-reported score.
-- `model` — the calibrated probability (must be calibrated, not raw softmax, for downstream rules to mean what they say).
-- `rule` — `min` of premise confidences by default; rules may override with explicit aggregation.
-- `external` — set by the trigger; webhooks default to 1.0, file watchers to 1.0, MCP-injected facts inherit from the source.
+- `tool` — the tool's own confidence if it returns one; else 1.0 for
+  deterministic tools, normalized retrieval scores for lookups.
+- `llm` — logprob-derived confidence when available; otherwise a documented
+  default unless the prompt asks the model for a self-reported score.
+- `rule` — `min` of premise confidences by default; rules may override with an
+  explicit aggregation.
+- `system` — runtime-attested events are typically pinned at 1.0.
 
 Sources should document their calibration in their skill or pack README.
 
-## Querying History
+## What replay captures
 
-Facts are indexed by `run_id` and `step`. Access:
+Every run emits a trace sufficient to replay it: the IR hash, the plugin set
+(distribution name, version, `api_version` per plugin), the Fathom decision log
+(rule firings in order with fact snapshots), and content-addressed I/O envelopes
+for all node inputs and outputs. Facts are indexed by `run_id` and `step`; the
+fact log is persisted by the configured `FactStore` provider.
 
-CLI:
+## Inspecting facts
+
+There is no `facts` subcommand. Inspect a run's facts and state over a SQLite
+checkpointer DB with `stargraph inspect`:
 
 ```bash
-stargraph facts list --run <run_id>
-stargraph facts list --run <run_id> --origin tool --since-step 12
-stargraph facts get --run <run_id> --step 7
+# CLIPS facts asserted/retracted between step 5 and step 9
+stargraph inspect <RUN_ID> --db .stargraph/run.sqlite --diff 5 9
+
+# state snapshot at step 7
+stargraph inspect <RUN_ID> --db .stargraph/run.sqlite --step 7
+
+# timeline (enriched with an audit log)
+stargraph inspect <RUN_ID> --db .stargraph/run.sqlite --log-file run.jsonl
 ```
 
-Python:
-
-```python
-from stargraph.client import StargraphClient
-
-c = StargraphClient()
-facts = c.facts.list(run_id="r-abc123", origin="tool", min_confidence=0.8)
-for f in facts:
-    print(f.step, f.source, f.body)
-```
-
-REST:
-
-```
-GET /v1/runs/{run_id}/facts?origin=tool&min_confidence=0.8&since_step=12
-```
-
-The fact log is append-only and persisted by the configured FactStore provider. Replays consume this log to reconstruct any prior CLIPS state.
+The fact-diff view (`--diff N M`) prints the CLIPS fact delta between two steps;
+the state view (`--step N`) prints the IR-canonical state dict at that step.

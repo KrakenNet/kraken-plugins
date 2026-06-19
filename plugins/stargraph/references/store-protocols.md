@@ -1,6 +1,8 @@
 # Stargraph Store Protocols
 
-Stargraph abstracts data tiers behind five Protocols. Plugins register concrete providers via entry points; graphs declare which provider to mount per tier in `stargraph.yaml`. Embedded providers are the default so a fresh `stargraph run` works air-gapped without external services.
+Stargraph abstracts data tiers behind five Protocols: `vector`, `graph`, `doc`, `memory`, `fact`. Plugins register concrete providers via entry points; graphs declare which provider to mount per tier in the graph IR (`stargraph.yaml`). Embedded providers are the default so a fresh `stargraph run` works air-gapped without external services.
+
+Every Protocol exposes a uniform lifecycle: `bootstrap()` (idempotent schema install), `health() -> StoreHealth`, and `migrate(plan)` (v1 supports `add_column` only). Embedded providers serialize writes through a single-writer-per-path lock.
 
 ## VectorStore
 
@@ -15,7 +17,7 @@ class VectorStore(Protocol):
 
 `Hit` is `(id, score, metadata)`. `filter` is a provider-specific predicate language; portable filters use a small subset (`{"key": "value"}` exact match, `{"key": {"$gt": n}}` range).
 
-Default provider: **LanceDB** (`lancedb:./.lance`). External: Pinecone, Weaviate, Qdrant.
+Default provider: **`LanceDBVectorStore`** (provider id `stargraph.stores.lancedb`, wired as `lancedb:./.lance`). External: Pinecone, Weaviate, Qdrant.
 
 ## GraphStore
 
@@ -29,7 +31,7 @@ class GraphStore(Protocol):
     def cypher(self, query: str, params: dict | None = None) -> list[dict]: ...
 ```
 
-Default provider: **Kuzu** (`kuzu:./.kuzu`). External: Neo4j, Memgraph.
+Default provider: **`RyuGraphStore`** (provider id `stargraph.stores.ryugraph` / `stargraph.stores.cypher`, wired as `ryugraph:./.ryu`). RyuGraph is a Kuzu fork; queries use a portable Cypher subset (checked by `Linter`). External: Neo4j, Memgraph.
 
 ## DocStore
 
@@ -44,7 +46,7 @@ class DocStore(Protocol):
 
 `doc` is any JSON-serializable mapping. `search` runs FTS on text fields the provider has indexed.
 
-Default provider: **SQLite + FTS5** (`sqlite:./.docs`). External: Elasticsearch, OpenSearch, Postgres + tsvector.
+Default provider: **`SQLiteDocStore`** (provider id `stargraph.stores.sqlite_doc`, wired as `sqlite:./.docs`, SQLite WAL). External: Elasticsearch, OpenSearch, Postgres + tsvector.
 
 ## MemoryStore
 
@@ -59,51 +61,56 @@ class MemoryStore(Protocol):
 
 `ttl` in seconds. Values are JSON-serializable. Keys are scoped per run by default; cross-run keys require an explicit prefix.
 
-Default provider: **SQLite** (`sqlite:./.memory`). External: Redis, Memcached.
+Default provider: **`SQLiteMemoryStore`** (provider id `stargraph.stores.sqlite_memory`, wired as `sqlite:./.memory`, SQLite WAL). External: Redis, Memcached.
 
 ## FactStore
 
-Provenance-typed fact log. Methods:
+Semantic-fact storage, keyed at `(user, agent)` and session-independent. Methods:
 
 ```python
 class FactStore(Protocol):
-    def assert_fact(self, fact: Fact, provenance: Provenance) -> None: ...
-    def query(self, pattern: dict) -> list[Fact]: ...
-    def retract(self, fact: Fact) -> None: ...
+    async def pin(self, fact: Fact) -> None: ...
+    async def query(self, pattern: FactPattern) -> list[Fact]: ...
+    async def unpin(self, fact_id: str) -> None: ...
 ```
 
-Note: `assert` is a Python keyword, so the method is `assert_fact`. `pattern` is a structured matcher: `{"template": "citation", "origin": "tool", "min_confidence": 0.8}`.
+`pin` is insert-or-replace by `fact.id`. A `Fact` carries `id`, `user`, `agent`, `payload`, a **mandatory** `lineage` (each entry traces back to originating episode/triple ids or rule firings), `confidence`, `pinned_at`, and `metadata`. `FactPattern` matches on `subject`/`predicate`/`object` slots plus the `user`/`agent` columns; a `None` slot is a wildcard.
 
-Default provider: **in-memory + SQLite persist** (`sqlite:./.facts`). The in-memory tier is the live CLIPS environment; the SQLite tier is the append-only audit log used for replay.
+Default provider: **`SQLiteFactStore`** (provider id `stargraph.stores.sqlite_fact`, wired as `sqlite:./.facts`, SQLite WAL + the `FathomAdapter`). The `apply_delta` provider extension is the lineage seam used to promote consolidated memory deltas into pinned facts.
 
-## Provider Registration
+## Registration: StoreSpec and StoreRef
 
-Providers register via Python entry points under the `stargraph.stores.<type>` group:
+A provider plugin registers via the `stargraph.stores` entry-point group plus a `register_stores()` hook returning `list[StoreSpec]`:
 
 ```toml
-# pyproject.toml of a stargraph-pinecone plugin
-[project.entry-points."stargraph.stores.vector"]
-pinecone = "stargraph_pinecone:PineconeProvider"
+# pyproject.toml of a store-providing plugin
+[project.entry-points."stargraph.stores"]
+my_vector = "my_pkg._plugin:manifest"
 ```
 
-A graph then mounts it:
+`StoreSpec` is the canonical registration record: `{name, provider, protocol, config_schema, capabilities}`. `protocol` is one of `vector`/`graph`/`doc`/`memory`/`fact`; `config_schema` is the JSON Schema for the provider's config; an empty `capabilities` list defaults to the `db.{name}:read` / `db.{name}:write` pair.
+
+Inside an `IRDocument`, a graph mounts a store as a lightweight **`StoreRef`** — `{name, provider}`:
 
 ```yaml
 stores:
-  vector: pinecone:my-index?env=production
+  - { name: "kb",    provider: "stargraph.stores.lancedb" }
+  - { name: "facts", provider: "stargraph.stores.sqlite_fact" }
 ```
 
-The string after the provider name is provider-specific config (URI, query string, or JSON depending on the provider).
+`StoreRef.to_capabilities()` returns `["db.{name}:read", "db.{name}:write"]` — the capability strings Bosun's policy gates check.
+
+The compact `<kind>: <provider>:<path>` form (e.g. `vector: lancedb:./.lance`) is the YAML shorthand the runtime parses into a `StoreRef`.
 
 ## Embedded vs External
 
 | Tier | Embedded default | External options |
 |---|---|---|
-| Vector | LanceDB | Pinecone, Weaviate, Qdrant |
-| Graph | Kuzu | Neo4j, Memgraph |
-| Doc | SQLite + FTS5 | Elasticsearch, Postgres + tsvector |
-| Memory | SQLite | Redis, Memcached |
-| Fact | SQLite + in-memory CLIPS | Postgres |
+| Vector | LanceDB (`stargraph.stores.lancedb`) | Pinecone, Weaviate, Qdrant |
+| Graph | RyuGraph (`stargraph.stores.ryugraph` / `…cypher`) | Neo4j, Memgraph |
+| Doc | SQLite WAL (`stargraph.stores.sqlite_doc`) | Elasticsearch, Postgres + tsvector |
+| Memory | SQLite WAL (`stargraph.stores.sqlite_memory`) | Redis, Memcached |
+| Fact | SQLite WAL + FathomAdapter (`stargraph.stores.sqlite_fact`) | Postgres |
 
 Embedded providers are the default because:
 

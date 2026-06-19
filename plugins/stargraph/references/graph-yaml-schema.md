@@ -1,231 +1,253 @@
-# Stargraph stargraph.yaml Reference
+# Stargraph IRDocument (graph YAML) Reference
 
-`stargraph.yaml` is the declarative manifest for a Stargraph graph. It binds a Pydantic state class, a list of nodes, mounted Bosun rule and governance packs, store providers, checkpoint policy, triggers, and plugin dependencies.
+A Stargraph graph is an **IRDocument** — a portable, JSON-Schema-typed description of an executable graph plus its rules, tools, skills, stores, and governance packs. It is authored as YAML (commonly `<graphdir>/stargraph.yaml`) and loaded by `stargraph run`, `stargraph serve --graph`, and `stargraph simulate`.
+
+Every IR model subclasses `IRBase`, which pins `extra='forbid'` — unknown keys are rejected at load time. Validation is automatic on load; you can also call `stargraph.ir.validate(ir)` in Python (it returns a `list[ValidationError]`, never raises).
 
 ## Top-level Keys
 
 | Key | Type | Required | Purpose |
 |---|---|---|---|
-| `name` | string | yes | Graph identifier; unique within a registry. |
-| `state` | string | yes | Path to Pydantic State class. |
-| `nodes` | list | yes | Ordered (or DAG) list of node definitions. |
-| `rules` | list | no | Bosun rule packs to mount. |
-| `governance` | list | no | Governance packs (budgets, audit, policy). |
-| `stores` | map | no | Store-tier provider mounts. |
-| `checkpoints` | map | no | Checkpoint policy. |
-| `triggers` | list | no | External run initiators. |
-| `plugins` | list | no | Stargraph plugins this graph depends on. |
+| `ir_version` | string | yes | `MAJOR.MINOR.PATCH` (e.g. `"1.0.0"`). Major divergence from the build's IR version is rejected. |
+| `id` | string | yes | Document identifier (e.g. `"graph:triage"`). |
+| `nodes` | list | yes | Graph nodes (`NodeSpec`). |
+| `rules` | list | no | Top-level rule definitions (`RuleSpec`). |
+| `tools` | list | no | Tool references (`ToolRef`). |
+| `skills` | list | no | Skill references (`SkillRef`). |
+| `stores` | list | no | Store bindings (`StoreRef`). |
+| `state_schema` | map | no | Flat `name -> type-string` map. Mutually exclusive with `state_class`. |
+| `state_class` | string | no | `module.path:ClassName` of an existing Pydantic model. Mutually exclusive with `state_schema`. |
+| `parallel` | list | no | Top-level parallel/join declarations (`ParallelBlock`). |
+| `governance` | list | no | Mounted Bosun packs (`PackMount`). |
+| `migrate` | list | no | Hash-to-hash migration descriptors for resume (`MigrateBlock`). |
 
-## name
+A minimal valid document needs only `ir_version`, `id`, and `nodes`; every other section defaults to an empty list/dict.
 
-A graph identifier. Must be unique in the registry that hosts it.
+## id
 
-```yaml
-name: research
-```
-
-Conventions: lowercase, kebab-case, no version suffix (versions are tracked by graph hash and registry tags).
-
-## state
-
-Module path with class name, separated by `:`.
+A free-form document identifier. Convention is a `graph:<slug>` form.
 
 ```yaml
-state: ./state.py:State
+id: "graph:research"
 ```
 
-The path is resolved relative to `stargraph.yaml`. The class must subclass `pydantic.BaseModel`. See `references/state-schema.md`.
+## state_schema / state_class
+
+State is Pydantic-typed. Declare it one of two mutually-exclusive ways:
+
+```yaml
+# flat primitive map: field name -> type string
+state_schema:
+  message: "str"
+  severity: "int"
+```
+
+```yaml
+# OR reference an existing Pydantic model
+state_class: "graph.state:RunState"
+```
+
+The two are mutually exclusive (resolved at `Graph` construction). See `references/state-schema.md`.
 
 ## nodes
 
-List of node definitions. Each entry has `name` and `type`; additional keys depend on the type.
+List of `NodeSpec`. Each entry has `id` and `kind`; builtins may carry a `config` block.
 
 ```yaml
 nodes:
-  - name: plan
-    type: dspy:ChainOfThought
-    signature: ./signatures.py:PlanSignature
+  - id: ingest
+    kind: "graph.nodes:IngestAlert"        # custom node: module.path:ClassName
 
-  - name: search
-    type: tool:browser.search
-    args:
-      max_results: 10
+  - id: risk_score
+    kind: ml                                # builtin factory key
+    config:
+      model_id: soc-severity
+      version: "1.0.0"
+      runtime: onnx
+      expected_sha256: "c314b6f6…"
+      input_field: features
+      output_field: risk
 
-  - name: classify
-    type: model:onnx:./models/intent.onnx
+  - id: triage_decide
+    kind: dspy
 
-  - name: retrieve
-    type: retrieval:vector
-    k: 8
-
-  - name: answer
-    type: subgraph:synthesize
+  - id: halt
+    kind: echo
 ```
 
-Type formats:
+`kind` is either a **builtin factory key** or a `module.path:ClassName` reference to a custom node.
 
-| Format | Meaning |
+| Builtin `kind` | Purpose |
 |---|---|
-| `dspy:<Module>` | DSPy module class (e.g. `Predict`, `ChainOfThought`, `ReAct`). |
-| `model:<format>:<id>` | Direct ML model: `onnx`, `transformers`, `gguf`, etc. `<id>` is a path or hub identifier. |
-| `tool:<namespace>.<name>` | Registered tool. Namespace is the plugin; name is the tool. |
-| `retrieval:<store>` | Retrieval over a mounted store tier (`vector`, `graph`, `doc`). |
-| `subgraph:<name>` | Embed another graph by name. |
+| `echo` | Pass state through unchanged. |
+| `halt` | Terminal node. |
+| `passthrough` | Pure dispatch point (no side effect); governance rules fire on it. |
+| `dspy` | LLM-backed DSPy node. |
+| `ml` | Direct ML model node (e.g. ONNX, sha256-pinned). |
+| `interrupt` | HITL pause node (see `references/hitl-patterns.md`). |
+| `human_input` | Human-input node. |
+| `retrieval` | Retrieval over a mounted store. |
+| `subgraph` | Embed another IR document as a node. |
+| `write_artifact` | Write a run artifact. |
+
+Tool-call nodes use `kind: tool` and reference the tool by its registry key:
+
+```yaml
+  - id: ask_broker
+    kind: tool
+    tool: nautilus.broker_request@1
+    inputs:
+      agent_id: "agent-42"
+      intent: "{{state.user_intent}}"
+    out: broker_reply
+```
+
+Node ids must match the slug regex `^[a-z0-9][a-z0-9_\-.]{0,127}$`.
 
 ## rules
 
-List of Bosun rule pack mounts. Each entry is a `{pack: <spec>}` mapping.
+A `RuleSpec` is `{id, when, then}`. `when` is a CLIPS-pattern condition string; `then` is a list of discriminated-union **actions** (no nesting).
 
 ```yaml
 rules:
-  - pack: bosun:routing/research
-  - pack: bosun:safety/pii@1.2.0
-  - pack: ./packs/local-rules
+  - id: r-ingest-to-retrieval
+    when: "?n <- (node-id (id ingest))"
+    then: [{ kind: goto, target: retrieval }]
+
+  - id: rule.escalate
+    when: "(severity ?s&:(>= ?s 4))"
+    then:
+      - { kind: goto, target: triage_decide }
 ```
 
-Pack specs:
+Action kinds (discriminated on `kind`):
 
-- `bosun:<group>/<name>` — registry-resolved, latest.
-- `bosun:<group>/<name>@<version>` — pinned version.
-- `./relative/path` — local pack.
+| `kind` | Notable fields |
+|---|---|
+| `goto` | `target` |
+| `halt` | `reason` (default `""`) |
+| `parallel` | `targets`, `join`, `strategy` (`all`/`any`/`race`/`quorum`) |
+| `retry` | `target`, `backoff_ms` |
+| `assert` | `fact`, `slots` (JSON-encoded slot dict) |
+| `retract` | `pattern` |
+| `interrupt` | `prompt`, `interrupt_payload`, `requested_capability`, `timeout`, `on_timeout` |
+
+There are **no explicit edges**. Routing is static fall-through (the engine walks `nodes` in declaration order when no rule fires) plus rule-driven `goto`.
 
 ## governance
 
-Same shape as `rules`, but mounted into the governance phase (runs before/after every node, not as routing).
+Mount Bosun packs as `PackMount` entries: `{id, version, requires}`. `requires` is a `PackRequires` compat block checked at load (`check_pack_compat` raises `PackCompatError` on mismatch).
 
 ```yaml
 governance:
-  - pack: bosun:budgets
-  - pack: bosun:audit
-  - pack: bosun:policy/no-pii-egress
+  - id: stargraph.bosun.budgets
+    version: "1.0"
+    requires: { stargraph_facts_version: "1.0", api_version: "1" }
+  - id: stargraph.bosun.audit
+    version: "1.0"
+    requires: { stargraph_facts_version: "1.0", api_version: "1" }
+  - id: soc-policy
+    version: "1.0"
+    requires: { stargraph_facts_version: "1.0", api_version: "1" }
 ```
+
+Pack ids are slug form with a separate `version` field. See `references/bosun-packs.md`.
 
 ## stores
 
-Map of tier name to `<provider>:<config>`.
+`StoreRef` is `{name, provider}`. `to_capabilities()` derives `["db.{name}:read", "db.{name}:write"]`.
 
 ```yaml
 stores:
-  vector: lancedb:./.lance
-  graph: kuzu:./.kuzu
-  doc: sqlite:./.docs
-  memory: sqlite:./.memory
-  fact: sqlite:./.facts
+  - { name: "kb", provider: "stargraph.stores.lancedb" }
+  - { name: "facts", provider: "stargraph.stores.sqlite_fact" }
 ```
 
-Tier names: `vector`, `graph`, `doc`, `memory`, `fact`. Any omitted tier uses its embedded default. See `references/store-protocols.md`.
+See `references/store-protocols.md` for the five protocols and real provider ids.
 
-## checkpoints
+## migrate
+
+`graph_hash` is the canonical IR hash (`dumps_canonical`, sorted keys). Resume rejects on hash mismatch unless a `migrate` block maps `from_hash -> to_hash`.
 
 ```yaml
-checkpoints:
-  every: node-exit       # node-exit | rule-fire | manual
-  store: sqlite:./.checkpoints
-  retain: 100            # optional: keep last N
+migrate:
+  - { from_hash: "<old>", to_hash: "<new>" }
 ```
 
-`every` controls cadence:
+## Validating a graph
 
-- `node-exit` — snapshot after every node returns (default).
-- `rule-fire` — also snapshot after each Bosun rule activation.
-- `manual` — only when a node calls `stargraph.checkpoint()` explicitly.
+There is no `graph verify` subcommand. Validate by loading:
 
-`store` is a checkpoint provider URI (typically SQLite).
+```bash
+# rule-firing trace, no node execution
+stargraph run graphs/triage.yaml --inspect
 
-## triggers
-
-```yaml
-triggers:
-  - type: cron
-    schedule: "0 */6 * * *"
-    payload:
-      query: "weekly digest"
-
-  - type: webhook
-    path: /research
-    auth: token
-
-  - type: file_watch
-    glob: "./inbox/*.json"
-
-  - type: mcp
-    method: research/start
-
-  - type: manual
+# offline trace against synthetic node outputs
+stargraph simulate graphs/triage.yaml --fixtures fixtures/triage.yaml
 ```
 
-Each trigger initiates a run with provided or constructed initial state. `manual` is implicit if no triggers are declared.
-
-## plugins
-
-Entry-point names of installed Stargraph plugins this graph depends on. Used at load time to verify the environment.
-
-```yaml
-plugins:
-  - stargraph-browser
-  - stargraph-bosun
-  - stargraph-pinecone
-```
-
-Missing a declared plugin is a load-time error.
+In Python: `stargraph.ir.validate(ir)` returns structured `ValidationError`s.
 
 ## Full Example
 
-A complete Research graph:
+A SOC-triage graph (modeled on `demos/soc-triage/graph/stargraph.yaml`):
 
 ```yaml
-name: research
-state: ./state.py:ResearchState
+ir_version: "1.0.0"
+id: "graph:soc-triage"
+
+state_class: "graph.state:RunState"
 
 nodes:
-  - name: plan
-    type: dspy:ChainOfThought
-    signature: ./signatures.py:PlanSignature
-
-  - name: search
-    type: tool:browser.search
-    args:
-      max_results: 10
-
-  - name: rerank
-    type: model:onnx:./models/reranker.onnx
-
-  - name: synthesize
-    type: dspy:ChainOfThought
-    signature: ./signatures.py:SynthesizeSignature
-
-rules:
-  - pack: bosun:routing/research
-  - pack: bosun:quality/citation-required
+  - id: ingest
+    kind: "graph.nodes:IngestAlert"
+  - id: retrieval
+    kind: "graph.nodes:RetrievalPriors"
+  - id: risk_score
+    kind: ml
+    config:
+      model_id: soc-severity
+      version: "1.0.0"
+      runtime: onnx
+      expected_sha256: "c314b6f6…"
+      input_field: features
+      output_field: risk
+  - id: triage_decide
+    kind: dspy
+  - id: soc_policy
+    kind: passthrough
+  - id: analyst_gate
+    kind: interrupt
+    config:
+      prompt: "Approve disposition {disposition} for alert {alert_id}?"
+      requested_capability: "runs:respond"
+      timeout: "PT900S"
+      on_timeout: "halt"
+  - id: write_artifact
+    kind: "graph.nodes:SocWriteArtifact"
+  - id: audit
+    kind: "graph.nodes:AuditChain"
+  - id: halt
+    kind: echo
 
 governance:
-  - pack: bosun:budgets
-  - pack: bosun:audit
-  - pack: bosun:policy/no-pii-egress
+  - id: stargraph.bosun.budgets
+    version: "1.0"
+    requires: { stargraph_facts_version: "1.0", api_version: "1" }
+  - id: soc-policy
+    version: "1.0"
+    requires: { stargraph_facts_version: "1.0", api_version: "1" }
 
-stores:
-  vector: lancedb:./.lance
-  graph: kuzu:./.kuzu
-  doc: sqlite:./.docs
-
-checkpoints:
-  every: node-exit
-  store: sqlite:./.checkpoints
-  retain: 50
-
-triggers:
-  - type: cron
-    schedule: "0 9 * * MON"
-    payload:
-      query: "weekly research digest"
-  - type: webhook
-    path: /research
-    auth: token
-  - type: manual
-
-plugins:
-  - stargraph-browser
-  - stargraph-bosun
+rules:
+  - id: r-ingest-to-retrieval
+    when: "?n <- (node-id (id ingest))"
+    then: [{ kind: goto, target: retrieval }]
+  - id: r-policy-escalate-hitl
+    when: "?n <- (node-id (id soc_policy)) (state (disposition escalate))"
+    then: [{ kind: goto, target: analyst_gate }]
+  - id: r-halt
+    when: "?n <- (node-id (id halt))"
+    then: [{ kind: halt, reason: "run complete" }]
 ```
 
-This graph plans, searches, reranks, and synthesizes; mounts routing and quality rule packs; enforces budgets, audit, and a no-PII-egress policy; persists to embedded stores; checkpoints at every node-exit retaining the last 50; and accepts cron, webhook, and manual triggers.
+This graph ingests an alert, retrieves priors, scores risk with a pinned ONNX model, decides a disposition with a DSPy node, applies the `soc-policy` Bosun pack at a passthrough dispatch point, routes escalations through a HITL interrupt gate, writes a case-note artifact, and seals a hash-chained audit record before halting.

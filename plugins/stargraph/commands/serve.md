@@ -1,6 +1,6 @@
 ---
 description: Start `stargraph serve` (FastAPI HTTP+WebSocket daemon) with a chosen profile
-argument-hint: [--profile dev|prod|cleared] [--port <n>] [--host <addr>]
+argument-hint: [--profile oss-default|cleared] [--port <n>] [--host <addr>]
 allowed-tools: [Bash, Read, AskUserQuestion]
 ---
 
@@ -12,31 +12,42 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/smart-stargraph/SKILL.md`.
 
 ## Parse Arguments
 
-- `--profile` ∈ {`dev`, `prod`, `cleared`} — default `dev`. Cleared profile assumes air-gapped, signed-only artifacts, no telemetry.
-- `--port` — default `9000`.
+- `--profile` ∈ {`oss-default`, `cleared`} — default `oss-default`. Under
+  `cleared`, the startup gate refuses `--allow-pack-mutation` and
+  `--allow-side-effects` and exits non-zero with a `ProfileViolationError`.
+- `--port` — default `8000`.
 - `--host` — default `127.0.0.1`. Use `0.0.0.0` only when the user explicitly asks for it.
 
-If a `stargraph` process already listens on `${STARGRAPH_URL}/health`, abort and report.
+If a `stargraph` process already listens on the chosen `--host:--port`, abort and report.
 
 ## Run
 
 ```bash
-STARGRAPH_PROFILE="${PROFILE:-dev}" \
-  uv run stargraph serve \
-    --host "${HOST:-127.0.0.1}" \
-    --port "${PORT:-9000}"
+uv run stargraph serve \
+  --profile "${PROFILE:-oss-default}" \
+  --host "${HOST:-127.0.0.1}" \
+  --port "${PORT:-8000}" \
+  --db ./stargraph.sqlite \
+  --audit-log ./audit.jsonl \
+  --graph "<graphdir>/stargraph.yaml"
 ```
 
-Run in background only if the user asked for it (`run_in_background: true`). Otherwise stream the boot output for ~3 seconds, then check:
+`--graph` is repeatable and loads + registers an IR YAML at boot; the graph's
+`id` is the key `POST /v1/runs` uses. Bind a local LLM with
+`--lm-url URL --lm-model NAME` (plus optional `--lm-key`/`--lm-timeout`).
+
+Run in background only if the user asked for it (`run_in_background: true`).
+Otherwise stream the boot output for ~3 seconds, then confirm the API is up by
+listing graphs:
 
 ```bash
-curl -fsS "${STARGRAPH_URL}/health" | jq .
-curl -fsS "${STARGRAPH_URL}/v1/graphs" | jq '.data | length'
+curl -fsS "http://localhost:8000/v1/graphs" \
+  -H "Authorization: Bypass operator" | jq 'length'
 ```
 
 ## Report
 
 - Profile, host:port, PID
 - Number of registered graphs
-- WebSocket endpoint: `${STARGRAPH_URL}/v1/runs/<id>/stream`
+- WebSocket endpoint: `http://localhost:8000/v1/runs/<id>/stream`
 - Stop hint: `kill <PID>` or Ctrl-C in the foreground shell

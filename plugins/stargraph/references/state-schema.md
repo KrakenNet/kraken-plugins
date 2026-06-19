@@ -2,6 +2,27 @@
 
 State is the typed bundle that flows through every node of a Stargraph graph. It is the source of truth — facts in CLIPS are merely a projection of annotated state at node boundaries.
 
+## Declaring state in the IR
+
+An `IRDocument` declares state one of two mutually-exclusive ways:
+
+- `state_class: "module.path:ClassName"` — reference an existing Pydantic model.
+- `state_schema:` — a flat `name -> type-string` map for simple primitive state.
+
+```yaml
+# stargraph.yaml — reference a Pydantic model
+state_class: "graph.state:RunState"
+```
+
+```yaml
+# OR a flat primitive map
+state_schema:
+  message: "str"
+  severity: "int"
+```
+
+The two are mutually exclusive (resolved at `Graph` construction, not in IR validation).
+
 ## Pydantic Foundation
 
 State is a Pydantic `BaseModel`. Nodes receive State as input and return a (possibly mutated) State as output. Inside the node body, mutate freely in plain Python — Stargraph only cares about the boundary.
@@ -26,7 +47,7 @@ Fields wrapped in `Annotated[<type>, Mirror()]` are mirrored to CLIPS at the nod
 ```python
 from typing import Annotated
 from pydantic import BaseModel, Field
-from stargraph.annotations import Mirror
+from stargraph.ir import Mirror
 
 class State(BaseModel):
     query: Annotated[str, Mirror()]
@@ -35,7 +56,7 @@ class State(BaseModel):
     raw_embeddings: list[float] = Field(default_factory=list)  # NOT mirrored
 ```
 
-`Mirror()` accepts options: `Mirror(name="...")` to override the CLIPS slot name, `Mirror(template="...")` to target a specific deftemplate.
+`Mirror` is a frozen marker appended to a field's `Annotated[...]` chain. `Mirror(template="...")` overrides the target CLIPS deftemplate (default: the field name); `Mirror(lifecycle=...)` tags the sync boundary as `"run"`, `"step"`, or `"pinned"`.
 
 ## Type Compatibility
 
@@ -97,7 +118,11 @@ graph_hash = sha256(topology + node_signatures + state_schema_hash)
 
 `state_schema_hash` is computed from the JSON Schema of the State model (stable field ordering). Adding a non-mirrored field with a default does not invalidate the hash if the JSON Schema is unchanged. Renaming a mirrored field, changing a type, or removing a field changes the hash.
 
-Checkpoints record the graph hash. `stargraph replay` and `stargraph run --resume` reject mismatches unless the graph declares a `migrate:` block mapping old → new fields.
+Checkpoints record the graph hash. Resume rejects a hash mismatch unless the graph declares a `migrate:` block mapping `from_hash → to_hash`.
+
+## Replay-Safe Collections
+
+State fields must use hashable, immutable collections so replay is deterministic. A field typed as `set` or `set[X]` (including a nested `set`) is **rejected** at construction time — use `frozenset` instead. When state is a skill's `state_schema`, its field names double as the declared output channels (the write-whitelist the engine enforces at the subgraph boundary); see `references/store-protocols.md` and the skill model for detail.
 
 ## Worked Example
 
@@ -107,7 +132,7 @@ A small Research graph state:
 from typing import Annotated, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field
-from stargraph.annotations import Mirror
+from stargraph.ir import Mirror
 
 class Citation(BaseModel):
     url: Annotated[str, Mirror()]
