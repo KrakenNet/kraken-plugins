@@ -1,0 +1,8 @@
+{
+  "name": "gauntlet",
+  "version": "0.1.0",
+  "description": "Gauntlet Loop harness — give an agent a hard external bar it cannot talk its way around, let it split the work, and never let the builder grade itself. Mechanically-blind A/B critics, a bar-soundness gate, receipted verdicts, and a live progress board. Bar recipes for agentic capabilities, reinforcement learning, and general coding.",
+  "author": {"name": "sean"},
+  "license": "Apache-2.0",
+  "keywords": ["gauntlet-loop", "critic", "blind-ab", "quality-bar", "agentic", "reinforcement-learning", "coding", "iteration", "subagents", "evaluation"]
+}
