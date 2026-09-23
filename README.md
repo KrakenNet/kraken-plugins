@@ -10,19 +10,21 @@ A Claude Code / Cursor plugin marketplace covering the Kraken Networks stack:
 | **nautilus** | Author + operate Nautilus data brokers | 0.1.0 |
 | **stargraph** | Author Stargraph orchestration graphs, skills, tools, markdown SKILL.md skills, directory plugins | 0.3.0 |
 | **forge** | 17-stage spec-anchored AI software pipeline w/ Ralph Loop, anti-cheat, spec GraphRAG, Reflexion lessons | 0.2.0 |
+| **ui-fidelity** | Multi-gate UI audit — dead buttons, orphan routes, flow continuity, LLM-as-critic UX pass | 0.1.0 |
+| **gauntlet** | Gauntlet Loop harness — hard external bar, blind A/B critics, receipted verdicts, live board | 0.1.0 |
 
 ## Install (Claude Code)
 
 ```bash
 claude plugins marketplace add KrakenNet/kraken-plugins
-claude plugins install railyard kb fathom nautilus stargraph forge
+claude plugins install railyard kb fathom nautilus stargraph forge ui-fidelity gauntlet
 ```
 
 ## Install (Cursor)
 
 ```bash
 cursor plugins marketplace add KrakenNet/kraken-plugins
-cursor plugins install railyard kb fathom nautilus stargraph forge
+cursor plugins install railyard kb fathom nautilus stargraph forge ui-fidelity gauntlet
 ```
 
 ## Plugin entry points
@@ -35,6 +37,8 @@ After install, type `/help` in Claude Code or Cursor to see all slash commands. 
 - `/nautilus:*` — Nautilus broker authoring + ops
 - `/stargraph:*` — Stargraph graph authoring + light ops
 - `/forge:*` — Spec-anchored feature pipeline + Ralph Loop
+- `/ui-fidelity:*` — Multi-gate UI audit
+- `/gauntlet:*` — Gauntlet Loop: bar-gated, blind-critic iteration to a hard external standard
 
 See each plugin's directory under `plugins/` for its README and command list.
 
